@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Estadium Fútbol — Fut Cartas</title>
+<title>Futcartas</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap');
 
@@ -86,7 +86,8 @@ import {
   onAuthStateChanged, signOut, updateProfile
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import {
-  getFirestore, doc, setDoc, getDoc, serverTimestamp
+  getFirestore, doc, setDoc, getDoc, serverTimestamp,
+  collection, getDocs, updateDoc, arrayUnion
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 // -------- Configuración de Firebase (proyecto: estadium-futbol-8d758) --------
@@ -169,13 +170,27 @@ const REAL_PLAYERS = [
   {name:"Jan Oblak", pos:"Arquero", team:"Atlético de Madrid", stats:{ata:14,def:92,pas:68,reg:35,fis:80}},
 ];
 
+const ALL_TEAMS = [...new Set(REAL_PLAYERS.map(p => p.team))].sort();
+
 function shuffle(arr){
   const a = arr.slice();
   for (let i=a.length-1;i>0;i--){ const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
   return a;
 }
-function randomStarterDeck(n=20){
-  return shuffle(REAL_PLAYERS).slice(0,n).map((c,i) => ({
+async function getAllowedTeams(){
+  try {
+    const snap = await getDoc(doc(db, 'config', 'deckSettings'));
+    if (snap.exists() && Array.isArray(snap.data().allowedTeams) && snap.data().allowedTeams.length > 0) {
+      return snap.data().allowedTeams;
+    }
+  } catch(e) { /* si falla, se usa el pool completo */ }
+  return null; // null = todos los equipos habilitados
+}
+async function randomStarterDeck(n=20){
+  const allowedTeams = await getAllowedTeams();
+  const pool = allowedTeams ? REAL_PLAYERS.filter(p => allowedTeams.includes(p.team)) : REAL_PLAYERS;
+  const source = pool.length >= n ? pool : REAL_PLAYERS; // si el pool filtrado quedó muy chico, se completa con todos
+  return shuffle(source).slice(0,n).map((c,i) => ({
     id: 'c_' + Date.now().toString(36) + '_' + i,
     name: c.name, team: c.team, pos: c.pos, stats: c.stats, rareza: 'normal'
   }));
@@ -199,8 +214,8 @@ function render(node){ root.innerHTML = ''; root.appendChild(node); }
 // -------- Pantalla: acceso de jugador (usuario + código) --------
 function renderPlayerLogin(){
   const wrap = h(`<div>
-    <div class="eyebrow">Estadium Fútbol</div>
-    <div class="h1">Fut Cartas</div>
+    <div class="eyebrow">Cartas de cancha</div>
+    <div class="h1">Futcartas</div>
     <div class="sub">Ingresá con el usuario y el código que te dio tu administrador para empezar a jugar.</div>
     <div class="panel">
       <label class="label">Usuario</label>
@@ -234,7 +249,7 @@ function renderPlayerLogin(){
 function renderAdminLogin(mode){
   const wrap = h(`<div>
     <div class="eyebrow">Acceso administrador</div>
-    <div class="h1" style="font-size:28px;">Estadium Fútbol</div>
+    <div class="h1" style="font-size:28px;">Futcartas</div>
     <div class="sub">Uso exclusivo del administrador (adulto responsable). Los jugadores ingresan con usuario y código en la pantalla anterior.</div>
     <div class="panel">
       <div class="tabs">
@@ -270,7 +285,7 @@ function renderAdminLogin(mode){
           uid: cred.user.uid, name, email,
           points: 0, role: 'player', // se eleva a 'admin' manualmente en Firestore la primera vez
           blocked: false, blockType: null, rating: null, medals: [],
-          cards: randomStarterDeck(20),
+          cards: await randomStarterDeck(20),
           createdAt: serverTimestamp(),
         });
       } else {
@@ -330,13 +345,118 @@ function renderCreatePlayerPanel(){
         uid: cred.user.uid, name, email, username: normalizeUsername(user),
         points: 0, role: 'player', blocked: false, blockType: null,
         rating: null, medals: [],
-        cards: randomStarterDeck(20),
+        cards: await randomStarterDeck(20),
         createdAt: serverTimestamp(),
       });
       await signOut(authSecondary);
       formOk = `Cuenta creada para ${name} (usuario: ${normalizeUsername(user)}).`;
     } catch (e) {
       formError = traducirError(e.code);
+    }
+    busy = false;
+    render(renderHome(currentProfile));
+  };
+  return wrap;
+}
+
+// -------- Panel: elegir qué equipos entran al sorteo del mazo inicial --------
+let deckSettingsCache = null; // {allowedTeams: [...]}
+async function loadDeckSettings(){
+  if (deckSettingsCache) return deckSettingsCache;
+  try {
+    const snap = await getDoc(doc(db, 'config', 'deckSettings'));
+    deckSettingsCache = snap.exists() ? snap.data() : { allowedTeams: ALL_TEAMS.slice() };
+  } catch(e) {
+    deckSettingsCache = { allowedTeams: ALL_TEAMS.slice() };
+  }
+  if (!deckSettingsCache.allowedTeams || deckSettingsCache.allowedTeams.length === 0) {
+    deckSettingsCache.allowedTeams = ALL_TEAMS.slice();
+  }
+  return deckSettingsCache;
+}
+function renderDeckPoolPanel(settings){
+  const allowed = new Set(settings.allowedTeams);
+  const wrap = h(`<div class="panel">
+    <div class="label" style="margin-bottom:12px;">Equipos habilitados para el mazo inicial (sorteo aleatorio)</div>
+    <div id="team-list" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;"></div>
+    ${formError ? `<div class="err">${formError}</div>` : ''}
+    ${formOk ? `<div class="ok">${formOk}</div>` : ''}
+    <button class="btn btn-ghost" id="dp-save" ${busy?'disabled':''}>${busy?'Guardando…':'Guardar selección'}</button>
+  </div>`);
+  const list = wrap.querySelector('#team-list');
+  ALL_TEAMS.forEach(team => {
+    const on = allowed.has(team);
+    const chip = h(`<span class="fc-team-chip" data-team="${team}" style="font-size:12px;font-family:'Space Mono',monospace;padding:6px 10px;border-radius:14px;border:1.5px solid ${on?'var(--floodlight)':'var(--pitch-line)'};color:${on?'var(--floodlight)':'var(--chalk-dim)'};background:${on?'rgba(255,209,102,0.08)':'transparent'};cursor:pointer;">${team}</span>`);
+    chip.onclick = () => {
+      if (allowed.has(team)) allowed.delete(team); else allowed.add(team);
+      chip.style.borderColor = allowed.has(team) ? 'var(--floodlight)' : 'var(--pitch-line)';
+      chip.style.color = allowed.has(team) ? 'var(--floodlight)' : 'var(--chalk-dim)';
+      chip.style.background = allowed.has(team) ? 'rgba(255,209,102,0.08)' : 'transparent';
+    };
+    list.appendChild(chip);
+  });
+  wrap.querySelector('#dp-save').onclick = async () => {
+    formError=''; formOk='';
+    if (allowed.size === 0) { formError = 'Dejá al menos un equipo habilitado.'; render(renderHome(currentProfile)); return; }
+    busy = true; render(renderHome(currentProfile));
+    try {
+      await setDoc(doc(db, 'config', 'deckSettings'), { allowedTeams: Array.from(allowed) });
+      deckSettingsCache = { allowedTeams: Array.from(allowed) };
+      formOk = 'Listo, esta selección se va a usar en los próximos mazos iniciales.';
+    } catch(e) {
+      formError = 'No se pudo guardar. Probá de nuevo.';
+    }
+    busy = false;
+    render(renderHome(currentProfile));
+  };
+  return wrap;
+}
+
+// -------- Panel: otorgar una carta puntual a un jugador --------
+let allPlayersCache = null;
+async function loadAllPlayers(){
+  if (allPlayersCache) return allPlayersCache;
+  try {
+    const snap = await getDocs(collection(db, 'users'));
+    allPlayersCache = snap.docs.map(d => ({ uid: d.id, name: d.data().name, username: d.data().username || '' }));
+  } catch(e) { allPlayersCache = []; }
+  return allPlayersCache;
+}
+function renderGrantCardPanel(players){
+  const wrap = h(`<div class="panel">
+    <div class="label" style="margin-bottom:12px;">Otorgar una carta a un jugador</div>
+    <label class="label">Jugador</label>
+    <select class="input" id="gc-player">
+      ${players.map(p => `<option value="${p.uid}">${p.name}${p.username ? ' (' + p.username + ')' : ''}</option>`).join('')}
+    </select>
+    <label class="label">Carta</label>
+    <select class="input" id="gc-card">
+      ${REAL_PLAYERS.map((c,i) => `<option value="${i}">${c.name} — ${c.team}</option>`).join('')}
+    </select>
+    <label class="label">Rareza</label>
+    <select class="input" id="gc-rareza">
+      <option value="normal">Normal</option>
+      <option value="plata">Plata</option>
+      <option value="oro">Oro</option>
+    </select>
+    ${formError ? `<div class="err">${formError}</div>` : ''}
+    ${formOk ? `<div class="ok">${formOk}</div>` : ''}
+    <button class="btn btn-ghost" id="gc-submit" ${busy?'disabled':''}>${busy?'Otorgando…':'Otorgar carta'}</button>
+  </div>`);
+  wrap.querySelector('#gc-submit').onclick = async () => {
+    formError=''; formOk='';
+    const uid = wrap.querySelector('#gc-player').value;
+    const idx = parseInt(wrap.querySelector('#gc-card').value);
+    const rareza = wrap.querySelector('#gc-rareza').value;
+    if (!uid) { formError = 'No hay jugadores para elegir todavía.'; render(renderHome(currentProfile)); return; }
+    const base = REAL_PLAYERS[idx];
+    const card = { id: 'c_' + Date.now().toString(36), name: base.name, team: base.team, pos: base.pos, stats: base.stats, rareza };
+    busy = true; render(renderHome(currentProfile));
+    try {
+      await updateDoc(doc(db, 'users', uid), { cards: arrayUnion(card) });
+      formOk = `Carta "${base.name}" (${rareza}) otorgada correctamente.`;
+    } catch(e) {
+      formError = 'No se pudo otorgar la carta. Probá de nuevo.';
     }
     busy = false;
     render(renderHome(currentProfile));
@@ -354,7 +474,7 @@ function renderHome(profile){
   const isAdmin = profile.role === 'admin';
   const wrap = h(`<div>
     <div class="top-row">
-      <div class="eyebrow">Estadium Fútbol</div>
+      <div class="eyebrow">Futcartas</div>
       <button class="logout-link" id="logout">Cerrar sesión</button>
     </div>
     <div class="h1" style="font-size:28px;">Hola, ${profile.name}${isAdmin ? '<span class="badge-admin">ADMIN</span>' : ''}</div>
@@ -370,10 +490,13 @@ function renderHome(profile){
       <div class="label" style="margin-bottom:12px;">Tu colección (${profile.cards.length})</div>
       <div class="card-grid" id="grid"></div>
     </div>
-    <div class="small-note">Los jugadores ingresan con usuario y código creados por el administrador — no hay registro abierto ni chat de texto libre entre jugadores. Próximas etapas: partidas en vivo que otorgan puntos, canje de cartas Plata/Oro, intercambios y el resto del panel de administrador.</div>
+    <div class="small-note">Los jugadores ingresan con usuario y código creados por el administrador — no hay registro abierto ni chat de texto libre entre jugadores. Próximas etapas: partidas en vivo que otorgan puntos, canje de cartas Plata/Oro e intercambios.</div>
   </div>`);
   if (isAdmin) {
-    wrap.querySelector('#admin-slot').appendChild(renderCreatePlayerPanel());
+    const slot = wrap.querySelector('#admin-slot');
+    slot.appendChild(renderCreatePlayerPanel());
+    loadDeckSettings().then(settings => { slot.appendChild(renderDeckPoolPanel(settings)); });
+    loadAllPlayers().then(players => { slot.appendChild(renderGrantCardPanel(players)); });
   }
   const grid = wrap.querySelector('#grid');
   profile.cards.forEach(c => {
@@ -404,7 +527,7 @@ onAuthStateChanged(auth, async (user) => {
       const fallback = {
         uid: user.uid, name: user.displayName || 'Jugador', email: user.email,
         points: 0, role: 'player', blocked: false, blockType: null,
-        rating: null, medals: [], cards: randomStarterDeck(20),
+        rating: null, medals: [], cards: await randomStarterDeck(20),
       };
       await setDoc(doc(db, 'users', user.uid), { ...fallback, createdAt: serverTimestamp() });
       render(renderHome(fallback));
