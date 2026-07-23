@@ -107,6 +107,7 @@ const db = getFirestore(fbApp);
 // App secundaria: se usa solo para crear cuentas de jugadores sin cerrar la sesión del admin
 const fbAppSecondary = initializeApp(firebaseConfig, 'Secondary');
 const authSecondary = getAuth(fbAppSecondary);
+const dbSecondary = getFirestore(fbAppSecondary);
 
 const PLAYER_EMAIL_DOMAIN = 'jugadores.futcartas.local';
 
@@ -325,7 +326,7 @@ function renderCreatePlayerPanel(){
     try {
       const email = usernameToEmail(user);
       const cred = await createUserWithEmailAndPassword(authSecondary, email, pin);
-      await setDoc(doc(db, 'users', cred.user.uid), {
+      await setDoc(doc(dbSecondary, 'users', cred.user.uid), {
         uid: cred.user.uid, name, email, username: normalizeUsername(user),
         points: 0, role: 'player', blocked: false, blockType: null,
         rating: null, medals: [],
