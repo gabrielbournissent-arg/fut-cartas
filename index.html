@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Estadium FÃºtbol â€” Fut Cartas</title>
+<title>Estadium Fútbol — Fut Cartas</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap');
 
@@ -77,7 +77,7 @@ body {
 </style>
 </head>
 <body>
-<div id="app"><div class="spinner">Cargandoâ€¦</div></div>
+<div id="app"><div class="spinner">Cargando…</div></div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
@@ -89,7 +89,7 @@ import {
   getFirestore, doc, setDoc, getDoc, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
-// -------- ConfiguraciÃ³n de Firebase (proyecto: estadium-futbol-8d758) --------
+// -------- Configuración de Firebase (proyecto: estadium-futbol-8d758) --------
 const firebaseConfig = {
   apiKey: "AIzaSyBNIemiQxvkqTcKmbRUYoMJEcALlP1srHs",
   authDomain: "estadium-futbol-8d758.firebaseapp.com",
@@ -104,7 +104,7 @@ const fbApp = initializeApp(firebaseConfig);
 const auth = getAuth(fbApp);
 const db = getFirestore(fbApp);
 
-// App secundaria: se usa solo para crear cuentas de jugadores sin cerrar la sesiÃ³n del admin
+// App secundaria: se usa solo para crear cuentas de jugadores sin cerrar la sesión del admin
 const fbAppSecondary = initializeApp(firebaseConfig, 'Secondary');
 const authSecondary = getAuth(fbAppSecondary);
 
@@ -114,28 +114,28 @@ const PLAYER_EMAIL_DOMAIN = 'jugadores.futcartas.local';
 const REAL_PLAYERS = [
   {name:"Lionel Messi", pos:"Delantero", team:"Inter Miami", stats:{ata:96,def:35,pas:94,reg:96,fis:65}},
   {name:"Cristiano Ronaldo", pos:"Delantero", team:"Al Nassr", stats:{ata:95,def:32,pas:80,reg:85,fis:88}},
-  {name:"Kylian MbappÃ©", pos:"Delantero", team:"Real Madrid", stats:{ata:94,def:34,pas:78,reg:92,fis:90}},
+  {name:"Kylian Mbappé", pos:"Delantero", team:"Real Madrid", stats:{ata:94,def:34,pas:78,reg:92,fis:90}},
   {name:"Erling Haaland", pos:"Delantero", team:"Manchester City", stats:{ata:93,def:40,pas:65,reg:75,fis:92}},
   {name:"Kevin De Bruyne", pos:"Mediocampista", team:"Manchester City", stats:{ata:85,def:55,pas:96,reg:82,fis:75}},
-  {name:"Luka ModriÄ‡", pos:"Mediocampista", team:"Real Madrid", stats:{ata:75,def:60,pas:92,reg:85,fis:65}},
+  {name:"Luka Modrić", pos:"Mediocampista", team:"Real Madrid", stats:{ata:75,def:60,pas:92,reg:85,fis:65}},
   {name:"Neymar Jr", pos:"Delantero", team:"Santos", stats:{ata:89,def:30,pas:85,reg:95,fis:68}},
   {name:"Mohamed Salah", pos:"Delantero", team:"Liverpool", stats:{ata:91,def:38,pas:78,reg:88,fis:78}},
-  {name:"Harry Kane", pos:"Delantero", team:"Bayern MÃºnich", stats:{ata:90,def:40,pas:82,reg:72,fis:82}},
+  {name:"Harry Kane", pos:"Delantero", team:"Bayern Múnich", stats:{ata:90,def:40,pas:82,reg:72,fis:82}},
   {name:"Robert Lewandowski", pos:"Delantero", team:"Barcelona", stats:{ata:92,def:35,pas:75,reg:78,fis:85}},
   {name:"Virgil van Dijk", pos:"Defensor", team:"Liverpool", stats:{ata:45,def:93,pas:75,reg:55,fis:90}},
   {name:"Alisson Becker", pos:"Arquero", team:"Liverpool", stats:{ata:15,def:88,pas:70,reg:40,fis:82}},
   {name:"Casemiro", pos:"Mediocampista", team:"Manchester United", stats:{ata:60,def:88,pas:80,reg:65,fis:85}},
   {name:"Jude Bellingham", pos:"Mediocampista", team:"Real Madrid", stats:{ata:82,def:65,pas:82,reg:80,fis:85}},
-  {name:"VinÃ­cius JÃºnior", pos:"Delantero", team:"Real Madrid", stats:{ata:88,def:30,pas:72,reg:93,fis:80}},
+  {name:"Vinícius Júnior", pos:"Delantero", team:"Real Madrid", stats:{ata:88,def:30,pas:72,reg:93,fis:80}},
   {name:"Rodri", pos:"Mediocampista", team:"Manchester City", stats:{ata:65,def:85,pas:90,reg:70,fis:82}},
   {name:"Paulo Dybala", pos:"Delantero", team:"AS Roma", stats:{ata:85,def:30,pas:82,reg:88,fis:65}},
-  {name:"Ãngel Di MarÃ­a", pos:"Delantero", team:"Rosario Central", stats:{ata:80,def:38,pas:85,reg:87,fis:65}},
-  {name:"JuliÃ¡n Ãlvarez", pos:"Delantero", team:"AtlÃ©tico de Madrid", stats:{ata:84,def:45,pas:78,reg:80,fis:75}},
-  {name:"Enzo FernÃ¡ndez", pos:"Mediocampista", team:"Chelsea", stats:{ata:72,def:70,pas:88,reg:75,fis:75}},
-  {name:"NicolÃ¡s Otamendi", pos:"Defensor", team:"Benfica", stats:{ata:40,def:85,pas:65,reg:45,fis:85}},
-  {name:"Emiliano MartÃ­nez", pos:"Arquero", team:"Aston Villa", stats:{ata:12,def:90,pas:60,reg:35,fis:80}},
-  {name:"Lautaro MartÃ­nez", pos:"Delantero", team:"Inter de MilÃ¡n", stats:{ata:87,def:40,pas:70,reg:78,fis:80}},
-  {name:"Rodrigo De Paul", pos:"Mediocampista", team:"AtlÃ©tico de Madrid", stats:{ata:70,def:68,pas:85,reg:75,fis:78}},
+  {name:"Ángel Di María", pos:"Delantero", team:"Rosario Central", stats:{ata:80,def:38,pas:85,reg:87,fis:65}},
+  {name:"Julián Álvarez", pos:"Delantero", team:"Atlético de Madrid", stats:{ata:84,def:45,pas:78,reg:80,fis:75}},
+  {name:"Enzo Fernández", pos:"Mediocampista", team:"Chelsea", stats:{ata:72,def:70,pas:88,reg:75,fis:75}},
+  {name:"Nicolás Otamendi", pos:"Defensor", team:"Benfica", stats:{ata:40,def:85,pas:65,reg:45,fis:85}},
+  {name:"Emiliano Martínez", pos:"Arquero", team:"Aston Villa", stats:{ata:12,def:90,pas:60,reg:35,fis:80}},
+  {name:"Lautaro Martínez", pos:"Delantero", team:"Inter de Milán", stats:{ata:87,def:40,pas:70,reg:78,fis:80}},
+  {name:"Rodrigo De Paul", pos:"Mediocampista", team:"Atlético de Madrid", stats:{ata:70,def:68,pas:85,reg:75,fis:78}},
   {name:"Alexis Mac Allister", pos:"Mediocampista", team:"Liverpool", stats:{ata:75,def:60,pas:88,reg:78,fis:72}},
   {name:"Cristian Romero", pos:"Defensor", team:"Tottenham", stats:{ata:42,def:88,pas:68,reg:48,fis:85}},
   {name:"Thibaut Courtois", pos:"Arquero", team:"Real Madrid", stats:{ata:14,def:90,pas:68,reg:38,fis:85}},
@@ -154,18 +154,18 @@ const REAL_PLAYERS = [
   {name:"Ederson", pos:"Arquero", team:"Manchester City", stats:{ata:15,def:87,pas:85,reg:40,fis:80}},
   {name:"Ollie Watkins", pos:"Delantero", team:"Aston Villa", stats:{ata:84,def:38,pas:70,reg:75,fis:82}},
   {name:"John McGinn", pos:"Mediocampista", team:"Aston Villa", stats:{ata:68,def:62,pas:78,reg:70,fis:80}},
-  {name:"NicolÃ² Barella", pos:"Mediocampista", team:"Inter de MilÃ¡n", stats:{ata:75,def:68,pas:85,reg:80,fis:78}},
-  {name:"Federico Dimarco", pos:"Defensor", team:"Inter de MilÃ¡n", stats:{ata:65,def:80,pas:82,reg:72,fis:78}},
-  {name:"Marcus Thuram", pos:"Delantero", team:"Inter de MilÃ¡n", stats:{ata:86,def:40,pas:70,reg:80,fis:85}},
-  {name:"Yann Sommer", pos:"Arquero", team:"Inter de MilÃ¡n", stats:{ata:13,def:85,pas:65,reg:35,fis:78}},
-  {name:"DuÅ¡an VlahoviÄ‡", pos:"Delantero", team:"Juventus", stats:{ata:87,def:35,pas:65,reg:72,fis:88}},
-  {name:"Kenan YÄ±ldÄ±z", pos:"Delantero", team:"Juventus", stats:{ata:78,def:35,pas:78,reg:85,fis:65}},
+  {name:"Nicolò Barella", pos:"Mediocampista", team:"Inter de Milán", stats:{ata:75,def:68,pas:85,reg:80,fis:78}},
+  {name:"Federico Dimarco", pos:"Defensor", team:"Inter de Milán", stats:{ata:65,def:80,pas:82,reg:72,fis:78}},
+  {name:"Marcus Thuram", pos:"Delantero", team:"Inter de Milán", stats:{ata:86,def:40,pas:70,reg:80,fis:85}},
+  {name:"Yann Sommer", pos:"Arquero", team:"Inter de Milán", stats:{ata:13,def:85,pas:65,reg:35,fis:78}},
+  {name:"Dušan Vlahović", pos:"Delantero", team:"Juventus", stats:{ata:87,def:35,pas:65,reg:72,fis:88}},
+  {name:"Kenan Yıldız", pos:"Delantero", team:"Juventus", stats:{ata:78,def:35,pas:78,reg:85,fis:65}},
   {name:"Manuel Locatelli", pos:"Mediocampista", team:"Juventus", stats:{ata:62,def:72,pas:82,reg:68,fis:78}},
   {name:"Cole Palmer", pos:"Mediocampista", team:"Chelsea", stats:{ata:85,def:40,pas:85,reg:85,fis:72}},
-  {name:"MoisÃ©s Caicedo", pos:"Mediocampista", team:"Chelsea", stats:{ata:55,def:85,pas:78,reg:65,fis:85}},
-  {name:"Robert SÃ¡nchez", pos:"Arquero", team:"Chelsea", stats:{ata:12,def:82,pas:65,reg:32,fis:80}},
-  {name:"Antoine Griezmann", pos:"Delantero", team:"AtlÃ©tico de Madrid", stats:{ata:88,def:45,pas:85,reg:85,fis:70}},
-  {name:"Jan Oblak", pos:"Arquero", team:"AtlÃ©tico de Madrid", stats:{ata:14,def:92,pas:68,reg:35,fis:80}},
+  {name:"Moisés Caicedo", pos:"Mediocampista", team:"Chelsea", stats:{ata:55,def:85,pas:78,reg:65,fis:85}},
+  {name:"Robert Sánchez", pos:"Arquero", team:"Chelsea", stats:{ata:12,def:82,pas:65,reg:32,fis:80}},
+  {name:"Antoine Griezmann", pos:"Delantero", team:"Atlético de Madrid", stats:{ata:88,def:45,pas:85,reg:85,fis:70}},
+  {name:"Jan Oblak", pos:"Arquero", team:"Atlético de Madrid", stats:{ata:14,def:92,pas:68,reg:35,fis:80}},
 ];
 
 function shuffle(arr){
@@ -195,32 +195,32 @@ let busy = false;
 function h(html){ const d = document.createElement('div'); d.innerHTML = html.trim(); return d.firstElementChild; }
 function render(node){ root.innerHTML = ''; root.appendChild(node); }
 
-// -------- Pantalla: acceso de jugador (usuario + cÃ³digo) --------
+// -------- Pantalla: acceso de jugador (usuario + código) --------
 function renderPlayerLogin(){
   const wrap = h(`<div>
-    <div class="eyebrow">Estadium FÃºtbol</div>
+    <div class="eyebrow">Estadium Fútbol</div>
     <div class="h1">Fut Cartas</div>
-    <div class="sub">IngresÃ¡ con el usuario y el cÃ³digo que te dio tu administrador para empezar a jugar.</div>
+    <div class="sub">Ingresá con el usuario y el código que te dio tu administrador para empezar a jugar.</div>
     <div class="panel">
       <label class="label">Usuario</label>
       <input class="input" id="f-user" placeholder="Ej: nacho12" autocomplete="off"/>
-      <label class="label">CÃ³digo</label>
-      <input class="input" id="f-pin" type="password" inputmode="numeric" placeholder="CÃ³digo de 6 dÃ­gitos"/>
+      <label class="label">Código</label>
+      <input class="input" id="f-pin" type="password" inputmode="numeric" placeholder="Código de 6 dígitos"/>
       ${formError ? `<div class="err">${formError}</div>` : ''}
-      <button class="btn btn-primary" id="f-submit" ${busy?'disabled':''}>${busy ? 'Entrandoâ€¦' : 'Entrar'}</button>
+      <button class="btn btn-primary" id="f-submit" ${busy?'disabled':''}>${busy ? 'Entrando…' : 'Entrar'}</button>
     </div>
-    <span class="link-small" id="go-admin">Â¿Sos el administrador? Ingresar con tu correo</span>
+    <span class="link-small" id="go-admin">¿Sos el administrador? Ingresar con tu correo</span>
   </div>`);
   wrap.querySelector('#go-admin').onclick = () => { screen='admin-login'; formError=''; render(renderAdminLogin('login')); };
   wrap.querySelector('#f-submit').onclick = async () => {
     const user = wrap.querySelector('#f-user').value;
     const pin = wrap.querySelector('#f-pin').value;
-    if (!user.trim() || !pin) { formError = 'CompletÃ¡ tu usuario y tu cÃ³digo.'; render(renderPlayerLogin()); return; }
+    if (!user.trim() || !pin) { formError = 'Completá tu usuario y tu código.'; render(renderPlayerLogin()); return; }
     busy = true; formError=''; render(renderPlayerLogin());
     try {
       await signInWithEmailAndPassword(auth, usernameToEmail(user), pin);
     } catch (e) {
-      formError = traducirError(e.code) || 'Usuario o cÃ³digo incorrectos.';
+      formError = traducirError(e.code) || 'Usuario o código incorrectos.';
       busy = false; render(renderPlayerLogin());
       return;
     }
@@ -229,24 +229,24 @@ function renderPlayerLogin(){
   return wrap;
 }
 
-// -------- Pantalla: acceso de administrador (correo + contraseÃ±a) --------
+// -------- Pantalla: acceso de administrador (correo + contraseña) --------
 function renderAdminLogin(mode){
   const wrap = h(`<div>
     <div class="eyebrow">Acceso administrador</div>
-    <div class="h1" style="font-size:28px;">Estadium FÃºtbol</div>
-    <div class="sub">Uso exclusivo del administrador (adulto responsable). Los jugadores ingresan con usuario y cÃ³digo en la pantalla anterior.</div>
+    <div class="h1" style="font-size:28px;">Estadium Fútbol</div>
+    <div class="sub">Uso exclusivo del administrador (adulto responsable). Los jugadores ingresan con usuario y código en la pantalla anterior.</div>
     <div class="panel">
       <div class="tabs">
-        <div class="tab ${mode==='login'?'active':''}" id="tab-login">Iniciar sesiÃ³n</div>
+        <div class="tab ${mode==='login'?'active':''}" id="tab-login">Iniciar sesión</div>
         <div class="tab ${mode==='register'?'active':''}" id="tab-register">Crear cuenta admin</div>
       </div>
       ${mode==='register' ? `<label class="label">Nombre</label><input class="input" id="f-name" placeholder="Tu nombre"/>` : ''}
-      <label class="label">Correo electrÃ³nico</label>
+      <label class="label">Correo electrónico</label>
       <input class="input" id="f-email" type="email" placeholder="tu@correo.com"/>
-      <label class="label">ContraseÃ±a</label>
-      <input class="input" id="f-pass" type="password" placeholder="MÃ­nimo 6 caracteres"/>
+      <label class="label">Contraseña</label>
+      <input class="input" id="f-pass" type="password" placeholder="Mínimo 6 caracteres"/>
       ${formError ? `<div class="err">${formError}</div>` : ''}
-      <button class="btn btn-primary" id="f-submit" ${busy?'disabled':''}>${busy ? 'Procesandoâ€¦' : (mode==='login' ? 'Iniciar sesiÃ³n' : 'Crear cuenta')}</button>
+      <button class="btn btn-primary" id="f-submit" ${busy?'disabled':''}>${busy ? 'Procesando…' : (mode==='login' ? 'Iniciar sesión' : 'Crear cuenta')}</button>
     </div>
     <span class="link-small" id="go-player">Volver al acceso de jugadores</span>
   </div>`);
@@ -258,8 +258,8 @@ function renderAdminLogin(mode){
     const pass = wrap.querySelector('#f-pass').value;
     const nameEl = wrap.querySelector('#f-name');
     const name = nameEl ? nameEl.value.trim() : '';
-    if (!email || !pass) { formError = 'CompletÃ¡ correo y contraseÃ±a.'; render(renderAdminLogin(mode)); return; }
-    if (mode === 'register' && !name) { formError = 'PonÃ© tu nombre.'; render(renderAdminLogin(mode)); return; }
+    if (!email || !pass) { formError = 'Completá correo y contraseña.'; render(renderAdminLogin(mode)); return; }
+    if (mode === 'register' && !name) { formError = 'Poné tu nombre.'; render(renderAdminLogin(mode)); return; }
     busy = true; formError=''; render(renderAdminLogin(mode));
     try {
       if (mode === 'register') {
@@ -288,13 +288,13 @@ function renderAdminLogin(mode){
 function traducirError(code){
   const map = {
     'auth/email-already-in-use': 'Ese usuario o correo ya existe.',
-    'auth/invalid-email': 'El dato ingresado no es vÃ¡lido.',
-    'auth/weak-password': 'El cÃ³digo/contraseÃ±a necesita al menos 6 caracteres.',
+    'auth/invalid-email': 'El dato ingresado no es válido.',
+    'auth/weak-password': 'El código/contraseña necesita al menos 6 caracteres.',
     'auth/user-not-found': 'No existe esa cuenta.',
-    'auth/wrong-password': 'El cÃ³digo o la contraseÃ±a son incorrectos.',
-    'auth/invalid-credential': 'Usuario/correo o cÃ³digo/contraseÃ±a incorrectos.',
+    'auth/wrong-password': 'El código o la contraseña son incorrectos.',
+    'auth/invalid-credential': 'Usuario/correo o código/contraseña incorrectos.',
   };
-  return map[code] || 'OcurriÃ³ un error. ProbÃ¡ de nuevo.';
+  return map[code] || 'Ocurrió un error. Probá de nuevo.';
 }
 
 // -------- Pantalla: crear jugador (solo admin) --------
@@ -305,11 +305,11 @@ function renderCreatePlayerPanel(){
     <input class="input" id="np-name" placeholder="Ej: Nacho"/>
     <label class="label">Usuario (sin espacios)</label>
     <input class="input" id="np-user" placeholder="Ej: nacho12"/>
-    <label class="label">CÃ³digo de 6 dÃ­gitos</label>
+    <label class="label">Código de 6 dígitos</label>
     <input class="input" id="np-pin" inputmode="numeric" placeholder="Ej: 482913"/>
     ${formError ? `<div class="err">${formError}</div>` : ''}
     ${formOk ? `<div class="ok">${formOk}</div>` : ''}
-    <button class="btn btn-primary" id="np-submit" ${busy?'disabled':''}>${busy?'Creandoâ€¦':'Crear jugador'}</button>
+    <button class="btn btn-primary" id="np-submit" ${busy?'disabled':''}>${busy?'Creando…':'Crear jugador'}</button>
   </div>`);
   wrap.querySelector('#np-submit').onclick = async () => {
     const name = wrap.querySelector('#np-name').value.trim();
@@ -317,7 +317,7 @@ function renderCreatePlayerPanel(){
     const pin = wrap.querySelector('#np-pin').value.trim();
     formError=''; formOk='';
     if (!name || !user || !/^[0-9]{6}$/.test(pin)) {
-      formError = 'CompletÃ¡ nombre, usuario y un cÃ³digo de exactamente 6 nÃºmeros.';
+      formError = 'Completá nombre, usuario y un código de exactamente 6 números.';
       render(renderHome(currentProfile));
       return;
     }
@@ -353,11 +353,11 @@ function renderHome(profile){
   const isAdmin = profile.role === 'admin';
   const wrap = h(`<div>
     <div class="top-row">
-      <div class="eyebrow">Estadium FÃºtbol</div>
-      <button class="logout-link" id="logout">Cerrar sesiÃ³n</button>
+      <div class="eyebrow">Estadium Fútbol</div>
+      <button class="logout-link" id="logout">Cerrar sesión</button>
     </div>
     <div class="h1" style="font-size:28px;">Hola, ${profile.name}${isAdmin ? '<span class="badge-admin">ADMIN</span>' : ''}</div>
-    <div class="sub">Este es tu perfil: tus puntos y tu colecciÃ³n de cartas.</div>
+    <div class="sub">Este es tu perfil: tus puntos y tu colección de cartas.</div>
     <div class="stat-cards">
       <div class="stat-card"><div class="num">${profile.points}</div><div class="lbl">Puntos</div></div>
       <div class="stat-card"><div class="num">${profile.cards.length}</div><div class="lbl">Cartas totales</div></div>
@@ -366,10 +366,10 @@ function renderHome(profile){
     </div>
     <div id="admin-slot"></div>
     <div class="panel">
-      <div class="label" style="margin-bottom:12px;">Tu colecciÃ³n (${profile.cards.length})</div>
+      <div class="label" style="margin-bottom:12px;">Tu colección (${profile.cards.length})</div>
       <div class="card-grid" id="grid"></div>
     </div>
-    <div class="small-note">Los jugadores ingresan con usuario y cÃ³digo creados por el administrador â€” no hay registro abierto ni chat de texto libre entre jugadores. PrÃ³ximas etapas: partidas en vivo que otorgan puntos, canje de cartas Plata/Oro, intercambios y el resto del panel de administrador.</div>
+    <div class="small-note">Los jugadores ingresan con usuario y código creados por el administrador — no hay registro abierto ni chat de texto libre entre jugadores. Próximas etapas: partidas en vivo que otorgan puntos, canje de cartas Plata/Oro, intercambios y el resto del panel de administrador.</div>
   </div>`);
   if (isAdmin) {
     wrap.querySelector('#admin-slot').appendChild(renderCreatePlayerPanel());
@@ -378,7 +378,7 @@ function renderHome(profile){
   profile.cards.forEach(c => {
     grid.appendChild(h(`<div class="mini-card rareza-${c.rareza}">
       <div class="mini-name">${c.name}</div>
-      <div class="mini-team">${c.pos} Â· ${c.team}</div>
+      <div class="mini-team">${c.pos} · ${c.team}</div>
       <div class="mini-stats">
         <span class="mini-stat">ATA ${c.stats.ata}</span>
         <span class="mini-stat">DEF ${c.stats.def}</span>
@@ -394,7 +394,7 @@ function renderHome(profile){
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) { screen='player-login'; render(renderPlayerLogin()); return; }
-  render(h(`<div class="spinner">Cargando tu perfilâ€¦</div>`));
+  render(h(`<div class="spinner">Cargando tu perfil…</div>`));
   try {
     const snap = await getDoc(doc(db, 'users', user.uid));
     if (snap.exists()) {
