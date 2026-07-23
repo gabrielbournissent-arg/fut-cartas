@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Estadium Fútbol — Fut Cartas</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap');
+
+* { box-sizing: border-box; }
+:root {
+  --pitch-dark: #0E2A1F;
+  --pitch-mid: #12331F;
+  --pitch-line: rgba(242,239,228,0.14);
+  --chalk: #F2EFE4;
+  --chalk-dim: rgba(242,239,228,0.6);
+  --floodlight: #FFD166;
+  --ember: #E4572E;
+  --silver: #C7CCD6;
+  --gold: #FFD166;
+}
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  color: var(--chalk);
+  background:
+    radial-gradient(circle at 15% 10%, rgba(255,209,102,0.06), transparent 40%),
+    repeating-linear-gradient(90deg, var(--pitch-mid) 0px, var(--pitch-mid) 60px, var(--pitch-dark) 60px, var(--pitch-dark) 120px),
+    var(--pitch-dark);
+  min-height: 100vh;
+}
+#app { max-width: 640px; margin: 0 auto; padding: 28px 16px 60px; }
+
+.eyebrow { font-family:'Space Mono',monospace; font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--floodlight); display:flex; align-items:center; gap:8px; }
+.eyebrow::before { content:""; width:7px; height:7px; border-radius:50%; background:var(--floodlight); box-shadow:0 0 8px var(--floodlight); }
+.h1 { font-family:'Oswald',sans-serif; font-weight:700; text-transform:uppercase; font-size:34px; line-height:1.05; margin:6px 0 4px; }
+.sub { color:var(--chalk-dim); font-size:14.5px; margin-bottom:22px; line-height:1.5; }
+
+.panel { background:linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.015)); border:1px solid var(--pitch-line); border-radius:14px; padding:22px; margin-bottom:16px; }
+
+.btn { font-family:'Oswald',sans-serif; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; font-size:15px; border:none; border-radius:9px; padding:14px 20px; cursor:pointer; width:100%; }
+.btn-primary { background:var(--floodlight); color:#1A1200; box-shadow:0 6px 0 #B8951F; }
+.btn-ghost { background:transparent; color:var(--chalk); border:1.5px solid var(--pitch-line); }
+.btn:disabled { opacity:0.4; cursor:not-allowed; }
+
+.input { width:100%; background:rgba(0,0,0,0.25); border:1.5px solid var(--pitch-line); border-radius:8px; padding:12px 14px; color:var(--chalk); font-size:15px; margin-bottom:12px; outline:none; }
+.input:focus { border-color:var(--floodlight); }
+.label { font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:var(--chalk-dim); margin-bottom:6px; display:block; font-family:'Space Mono',monospace; }
+
+.tabs { display:flex; gap:8px; margin-bottom:18px; }
+.tab { flex:1; text-align:center; padding:10px; border-radius:8px; font-family:'Oswald',sans-serif; text-transform:uppercase; font-size:13px; cursor:pointer; border:1.5px solid var(--pitch-line); color:var(--chalk-dim); }
+.tab.active { border-color:var(--floodlight); color:var(--floodlight); background:rgba(255,209,102,0.08); }
+
+.err { color:#FF8A73; font-size:13px; margin:-4px 0 12px; }
+
+.stat-cards { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:18px; }
+.stat-card { background:rgba(0,0,0,0.25); border:1px solid var(--pitch-line); border-radius:12px; padding:14px; text-align:center; }
+.stat-card .num { font-family:'Space Mono',monospace; font-weight:700; font-size:26px; color:var(--floodlight); }
+.stat-card .lbl { font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:var(--chalk-dim); margin-top:2px; }
+
+.card-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.mini-card { background:linear-gradient(160deg,#17402A,#0E2A1F); border:1px solid rgba(255,209,102,0.2); border-radius:10px; padding:12px; }
+.mini-card.rareza-plata { border-color: var(--silver); box-shadow: 0 0 0 1px var(--silver); }
+.mini-card.rareza-oro { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
+.mini-name { font-family:'Oswald',sans-serif; font-weight:600; font-size:14px; text-transform:uppercase; }
+.mini-team { font-size:10px; color:var(--chalk-dim); font-family:'Space Mono',monospace; text-transform:uppercase; margin-bottom:6px; }
+.mini-stats { display:flex; flex-wrap:wrap; gap:4px; }
+.mini-stat { font-size:10px; font-family:'Space Mono',monospace; background:rgba(0,0,0,0.25); padding:2px 6px; border-radius:4px; color:var(--chalk-dim); }
+
+.small-note { font-size:12px; color:var(--chalk-dim); text-align:center; margin-top:10px; line-height:1.5; }
+.top-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+.logout-link { font-size:12px; color:var(--chalk-dim); text-decoration:underline; cursor:pointer; background:none; border:none; font-family:'Inter',sans-serif; }
+.spinner { text-align:center; padding:60px 0; color:var(--chalk-dim); font-family:'Space Mono',monospace; }
+</style>
+</head>
+<body>
+<div id="app"><div class="spinner">Cargando…</div></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import {
+  getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+  onAuthStateChanged, signOut, updateProfile
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+import {
+  getFirestore, doc, setDoc, getDoc, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+// -------- Configuración de Firebase (proyecto: estadium-futbol-8d758) --------
+const firebaseConfig = {
+  apiKey: "AIzaSyBNIemiQxvkqTcKmbRUYoMJEcALlP1srHs",
+  authDomain: "estadium-futbol-8d758.firebaseapp.com",
+  projectId: "estadium-futbol-8d758",
+  storageBucket: "estadium-futbol-8d758.firebasestorage.app",
+  messagingSenderId: "952817680544",
+  appId: "1:952817680544:web:fa3dd45b8197890f3fc9c5",
+  measurementId: "G-YNM2R20ZRE"
+};
+
+const fbApp = initializeApp(firebaseConfig);
+const auth = getAuth(fbApp);
+const db = getFirestore(fbApp);
+
+// -------- Pool de cartas para el mazo inicial --------
+const REAL_PLAYERS = [
+  {name:"Lionel Messi", pos:"Delantero", team:"Inter Miami", stats:{ata:96,def:35,pas:94,reg:96,fis:65}},
+  {name:"Cristiano Ronaldo", pos:"Delantero", team:"Al Nassr", stats:{ata:95,def:32,pas:80,reg:85,fis:88}},
+  {name:"Kylian Mbappé", pos:"Delantero", team:"Real Madrid", stats:{ata:94,def:34,pas:78,reg:92,fis:90}},
+  {name:"Erling Haaland", pos:"Delantero", team:"Manchester City", stats:{ata:93,def:40,pas:65,reg:75,fis:92}},
+  {name:"Kevin De Bruyne", pos:"Mediocampista", team:"Manchester City", stats:{ata:85,def:55,pas:96,reg:82,fis:75}},
+  {name:"Luka Modrić", pos:"Mediocampista", team:"Real Madrid", stats:{ata:75,def:60,pas:92,reg:85,fis:65}},
+  {name:"Neymar Jr", pos:"Delantero", team:"Santos", stats:{ata:89,def:30,pas:85,reg:95,fis:68}},
+  {name:"Mohamed Salah", pos:"Delantero", team:"Liverpool", stats:{ata:91,def:38,pas:78,reg:88,fis:78}},
+  {name:"Harry Kane", pos:"Delantero", team:"Bayern Múnich", stats:{ata:90,def:40,pas:82,reg:72,fis:82}},
+  {name:"Robert Lewandowski", pos:"Delantero", team:"Barcelona", stats:{ata:92,def:35,pas:75,reg:78,fis:85}},
+  {name:"Virgil van Dijk", pos:"Defensor", team:"Liverpool", stats:{ata:45,def:93,pas:75,reg:55,fis:90}},
+  {name:"Alisson Becker", pos:"Arquero", team:"Liverpool", stats:{ata:15,def:88,pas:70,reg:40,fis:82}},
+  {name:"Casemiro", pos:"Mediocampista", team:"Manchester United", stats:{ata:60,def:88,pas:80,reg:65,fis:85}},
+  {name:"Jude Bellingham", pos:"Mediocampista", team:"Real Madrid", stats:{ata:82,def:65,pas:82,reg:80,fis:85}},
+  {name:"Vinícius Júnior", pos:"Delantero", team:"Real Madrid", stats:{ata:88,def:30,pas:72,reg:93,fis:80}},
+  {name:"Rodri", pos:"Mediocampista", team:"Manchester City", stats:{ata:65,def:85,pas:90,reg:70,fis:82}},
+  {name:"Paulo Dybala", pos:"Delantero", team:"AS Roma", stats:{ata:85,def:30,pas:82,reg:88,fis:65}},
+  {name:"Ángel Di María", pos:"Delantero", team:"Rosario Central", stats:{ata:80,def:38,pas:85,reg:87,fis:65}},
+  {name:"Julián Álvarez", pos:"Delantero", team:"Atlético de Madrid", stats:{ata:84,def:45,pas:78,reg:80,fis:75}},
+  {name:"Enzo Fernández", pos:"Mediocampista", team:"Chelsea", stats:{ata:72,def:70,pas:88,reg:75,fis:75}},
+  {name:"Nicolás Otamendi", pos:"Defensor", team:"Benfica", stats:{ata:40,def:85,pas:65,reg:45,fis:85}},
+  {name:"Emiliano Martínez", pos:"Arquero", team:"Aston Villa", stats:{ata:12,def:90,pas:60,reg:35,fis:80}},
+  {name:"Lautaro Martínez", pos:"Delantero", team:"Inter de Milán", stats:{ata:87,def:40,pas:70,reg:78,fis:80}},
+  {name:"Rodrigo De Paul", pos:"Mediocampista", team:"Atlético de Madrid", stats:{ata:70,def:68,pas:85,reg:75,fis:78}},
+  {name:"Alexis Mac Allister", pos:"Mediocampista", team:"Liverpool", stats:{ata:75,def:60,pas:88,reg:78,fis:72}},
+  {name:"Cristian Romero", pos:"Defensor", team:"Tottenham", stats:{ata:42,def:88,pas:68,reg:48,fis:85}},
+  {name:"Thibaut Courtois", pos:"Arquero", team:"Real Madrid", stats:{ata:14,def:90,pas:68,reg:38,fis:85}},
+  {name:"Toni Kroos", pos:"Mediocampista", team:"Real Madrid", stats:{ata:70,def:55,pas:95,reg:75,fis:60}},
+  {name:"Pedri", pos:"Mediocampista", team:"Barcelona", stats:{ata:70,def:50,pas:92,reg:85,fis:65}},
+  {name:"Gavi", pos:"Mediocampista", team:"Barcelona", stats:{ata:65,def:60,pas:85,reg:82,fis:70}},
+  {name:"Raphinha", pos:"Delantero", team:"Barcelona", stats:{ata:85,def:40,pas:78,reg:88,fis:75}},
+  {name:"Frenkie de Jong", pos:"Mediocampista", team:"Barcelona", stats:{ata:65,def:65,pas:90,reg:85,fis:72}},
+  {name:"Lamine Yamal", pos:"Delantero", team:"Barcelona", stats:{ata:82,def:30,pas:80,reg:90,fis:60}},
+  {name:"Rodrygo", pos:"Delantero", team:"Real Madrid", stats:{ata:83,def:35,pas:75,reg:87,fis:75}},
+  {name:"Eduardo Camavinga", pos:"Mediocampista", team:"Real Madrid", stats:{ata:65,def:75,pas:82,reg:78,fis:80}},
+  {name:"Bruno Fernandes", pos:"Mediocampista", team:"Manchester United", stats:{ata:82,def:50,pas:90,reg:78,fis:70}},
+  {name:"Marcus Rashford", pos:"Delantero", team:"Manchester United", stats:{ata:80,def:35,pas:72,reg:85,fis:78}},
+  {name:"Phil Foden", pos:"Mediocampista", team:"Manchester City", stats:{ata:82,def:45,pas:85,reg:88,fis:68}},
+  {name:"Bernardo Silva", pos:"Mediocampista", team:"Manchester City", stats:{ata:75,def:55,pas:88,reg:85,fis:70}},
+  {name:"Ederson", pos:"Arquero", team:"Manchester City", stats:{ata:15,def:87,pas:85,reg:40,fis:80}},
+  {name:"Ollie Watkins", pos:"Delantero", team:"Aston Villa", stats:{ata:84,def:38,pas:70,reg:75,fis:82}},
+  {name:"John McGinn", pos:"Mediocampista", team:"Aston Villa", stats:{ata:68,def:62,pas:78,reg:70,fis:80}},
+  {name:"Nicolò Barella", pos:"Mediocampista", team:"Inter de Milán", stats:{ata:75,def:68,pas:85,reg:80,fis:78}},
+  {name:"Federico Dimarco", pos:"Defensor", team:"Inter de Milán", stats:{ata:65,def:80,pas:82,reg:72,fis:78}},
+  {name:"Marcus Thuram", pos:"Delantero", team:"Inter de Milán", stats:{ata:86,def:40,pas:70,reg:80,fis:85}},
+  {name:"Yann Sommer", pos:"Arquero", team:"Inter de Milán", stats:{ata:13,def:85,pas:65,reg:35,fis:78}},
+  {name:"Dušan Vlahović", pos:"Delantero", team:"Juventus", stats:{ata:87,def:35,pas:65,reg:72,fis:88}},
+  {name:"Kenan Yıldız", pos:"Delantero", team:"Juventus", stats:{ata:78,def:35,pas:78,reg:85,fis:65}},
+  {name:"Manuel Locatelli", pos:"Mediocampista", team:"Juventus", stats:{ata:62,def:72,pas:82,reg:68,fis:78}},
+  {name:"Cole Palmer", pos:"Mediocampista", team:"Chelsea", stats:{ata:85,def:40,pas:85,reg:85,fis:72}},
+  {name:"Moisés Caicedo", pos:"Mediocampista", team:"Chelsea", stats:{ata:55,def:85,pas:78,reg:65,fis:85}},
+  {name:"Robert Sánchez", pos:"Arquero", team:"Chelsea", stats:{ata:12,def:82,pas:65,reg:32,fis:80}},
+  {name:"Antoine Griezmann", pos:"Delantero", team:"Atlético de Madrid", stats:{ata:88,def:45,pas:85,reg:85,fis:70}},
+  {name:"Jan Oblak", pos:"Arquero", team:"Atlético de Madrid", stats:{ata:14,def:92,pas:68,reg:35,fis:80}},
+];
+
+function shuffle(arr){
+  const a = arr.slice();
+  for (let i=a.length-1;i>0;i--){ const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+  return a;
+}
+function randomStarterDeck(n=20){
+  return shuffle(REAL_PLAYERS).slice(0,n).map((c,i) => ({
+    id: 'c_' + Date.now().toString(36) + '_' + i,
+    name: c.name, team: c.team, pos: c.pos, stats: c.stats, rareza: 'normal'
+  }));
+}
+
+const root = document.getElementById('app');
+let authMode = 'login'; // 'login' | 'register'
+let formError = '';
+let busy = false;
+
+function h(html){ const d = document.createElement('div'); d.innerHTML = html.trim(); return d.firstElementChild; }
+function render(node){ root.innerHTML = ''; root.appendChild(node); }
+
+function renderAuthScreen(){
+  const wrap = h(`<div>
+    <div class="eyebrow">Estadium Fútbol</div>
+    <div class="h1">Fut Cartas</div>
+    <div class="sub">Iniciá sesión o creá tu cuenta para empezar a jugar, acumular puntos y armar tu colección.</div>
+    <div class="panel">
+      <div class="tabs">
+        <div class="tab ${authMode==='login'?'active':''}" id="tab-login">Iniciar sesión</div>
+        <div class="tab ${authMode==='register'?'active':''}" id="tab-register">Crear cuenta</div>
+      </div>
+      ${authMode==='register' ? `<label class="label">Nombre</label><input class="input" id="f-name" placeholder="Tu nombre"/>` : ''}
+      <label class="label">Correo electrónico</label>
+      <input class="input" id="f-email" type="email" placeholder="tu@correo.com"/>
+      <label class="label">Contraseña</label>
+      <input class="input" id="f-pass" type="password" placeholder="Mínimo 6 caracteres"/>
+      ${formError ? `<div class="err">${formError}</div>` : ''}
+      <button class="btn btn-primary" id="f-submit" ${busy?'disabled':''}>${busy ? 'Procesando…' : (authMode==='login' ? 'Iniciar sesión' : 'Crear cuenta')}</button>
+    </div>
+  </div>`);
+  wrap.querySelector('#tab-login').onclick = () => { authMode='login'; formError=''; render(renderAuthScreen()); };
+  wrap.querySelector('#tab-register').onclick = () => { authMode='register'; formError=''; render(renderAuthScreen()); };
+  wrap.querySelector('#f-submit').onclick = async () => {
+    const email = wrap.querySelector('#f-email').value.trim();
+    const pass = wrap.querySelector('#f-pass').value;
+    const nameEl = wrap.querySelector('#f-name');
+    const name = nameEl ? nameEl.value.trim() : '';
+    if (!email || !pass) { formError = 'Completá correo y contraseña.'; render(renderAuthScreen()); return; }
+    if (authMode === 'register' && !name) { formError = 'Poné tu nombre.'; render(renderAuthScreen()); return; }
+    busy = true; formError=''; render(renderAuthScreen());
+    try {
+      if (authMode === 'register') {
+        const cred = await createUserWithEmailAndPassword(auth, email, pass);
+        await updateProfile(cred.user, { displayName: name });
+        await setDoc(doc(db, 'users', cred.user.uid), {
+          uid: cred.user.uid,
+          name, email,
+          points: 0,
+          role: 'player',
+          blocked: false,
+          blockType: null,
+          rating: null,
+          medals: [],
+          cards: randomStarterDeck(20),
+          createdAt: serverTimestamp(),
+        });
+      } else {
+        await signInWithEmailAndPassword(auth, email, pass);
+      }
+    } catch (e) {
+      formError = traducirError(e.code);
+      busy = false; render(renderAuthScreen());
+      return;
+    }
+    busy = false;
+  };
+  return wrap;
+}
+
+function traducirError(code){
+  const map = {
+    'auth/email-already-in-use': 'Ese correo ya tiene una cuenta creada.',
+    'auth/invalid-email': 'El correo no es válido.',
+    'auth/weak-password': 'La contraseña necesita al menos 6 caracteres.',
+    'auth/user-not-found': 'No existe una cuenta con ese correo.',
+    'auth/wrong-password': 'La contraseña es incorrecta.',
+    'auth/invalid-credential': 'Correo o contraseña incorrectos.',
+  };
+  return map[code] || 'Ocurrió un error. Probá de nuevo.';
+}
+
+function renderHome(profile){
+  const normales = profile.cards.filter(c => c.rareza === 'normal').length;
+  const platas = profile.cards.filter(c => c.rareza === 'plata').length;
+  const oros = profile.cards.filter(c => c.rareza === 'oro').length;
+  const wrap = h(`<div>
+    <div class="top-row">
+      <div class="eyebrow">Estadium Fútbol</div>
+      <button class="logout-link" id="logout">Cerrar sesión</button>
+    </div>
+    <div class="h1" style="font-size:28px;">Hola, ${profile.name}</div>
+    <div class="sub">Este es tu perfil: tus puntos y tu colección de cartas.</div>
+    <div class="stat-cards">
+      <div class="stat-card"><div class="num">${profile.points}</div><div class="lbl">Puntos</div></div>
+      <div class="stat-card"><div class="num">${profile.cards.length}</div><div class="lbl">Cartas totales</div></div>
+      <div class="stat-card"><div class="num">${platas}</div><div class="lbl">Plata</div></div>
+      <div class="stat-card"><div class="num">${oros}</div><div class="lbl">Oro</div></div>
+    </div>
+    <div class="panel">
+      <div class="label" style="margin-bottom:12px;">Tu colección (${profile.cards.length})</div>
+      <div class="card-grid" id="grid"></div>
+    </div>
+    <div class="small-note">Esta es la primera versión conectada a tu cuenta real: registro, mazo inicial de 20 cartas y tus puntos ya quedan guardados. Las próximas etapas suman: partidas en vivo que otorgan puntos, canje de cartas Plata/Oro, intercambios y tu panel de administrador.</div>
+  </div>`);
+  const grid = wrap.querySelector('#grid');
+  profile.cards.forEach(c => {
+    grid.appendChild(h(`<div class="mini-card rareza-${c.rareza}">
+      <div class="mini-name">${c.name}</div>
+      <div class="mini-team">${c.pos} · ${c.team}</div>
+      <div class="mini-stats">
+        <span class="mini-stat">ATA ${c.stats.ata}</span>
+        <span class="mini-stat">DEF ${c.stats.def}</span>
+        <span class="mini-stat">PAS ${c.stats.pas}</span>
+        <span class="mini-stat">REG ${c.stats.reg}</span>
+        <span class="mini-stat">FIS ${c.stats.fis}</span>
+      </div>
+    </div>`));
+  });
+  wrap.querySelector('#logout').onclick = () => signOut(auth);
+  return wrap;
+}
+
+onAuthStateChanged(auth, async (user) => {
+  if (!user) { render(renderAuthScreen()); return; }
+  render(h(`<div class="spinner">Cargando tu perfil…</div>`));
+  try {
+    const snap = await getDoc(doc(db, 'users', user.uid));
+    if (snap.exists()) {
+      render(renderHome(snap.data()));
+    } else {
+      // Cuenta autenticada sin documento (caso raro) — se crea uno por defecto
+      const fallback = {
+        uid: user.uid, name: user.displayName || 'Jugador', email: user.email,
+        points: 0, role: 'player', blocked: false, blockType: null,
+        rating: null, medals: [], cards: randomStarterDeck(20),
+      };
+      await setDoc(doc(db, 'users', user.uid), { ...fallback, createdAt: serverTimestamp() });
+      render(renderHome(fallback));
+    }
+  } catch (e) {
+    render(h(`<div class="panel"><div class="err">No se pudo cargar tu perfil: ${e.message}</div></div>`));
+  }
+});
+</script>
+</body>
+</html>
