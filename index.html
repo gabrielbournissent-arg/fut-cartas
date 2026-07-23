@@ -87,7 +87,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import {
   getFirestore, doc, setDoc, getDoc, serverTimestamp,
-  collection, getDocs, updateDoc, arrayUnion
+  collection, getDocs, updateDoc, arrayUnion, arrayRemove, onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 // -------- Configuración de Firebase (proyecto: estadium-futbol-8d758) --------
@@ -485,6 +485,7 @@ function renderHome(profile){
       <div class="stat-card"><div class="num">${platas}</div><div class="lbl">Plata</div></div>
       <div class="stat-card"><div class="num">${oros}</div><div class="lbl">Oro</div></div>
     </div>
+    <button class="btn btn-primary" id="go-rooms" style="margin-bottom:16px;">Jugar en sala</button>
     <div id="admin-slot"></div>
     <div class="panel">
       <div class="label" style="margin-bottom:12px;">Tu colección (${profile.cards.length})</div>
@@ -513,6 +514,203 @@ function renderHome(profile){
     </div>`));
   });
   wrap.querySelector('#logout').onclick = () => signOut(auth);
+  wrap.querySelector('#go-rooms').onclick = () => { screen='rooms-menu'; formError=''; render(renderRoomsMenu()); };
+  return wrap;
+}
+
+// ==================== SALAS DE JUEGO ====================
+let currentRoomCode = null;
+let currentRoomData = null;
+let unsubscribeRoom = null;
+
+function stopRoomListener(){
+  if (unsubscribeRoom) { unsubscribeRoom(); unsubscribeRoom = null; }
+}
+function roomsKey(code){ return code; }
+function generateRoomCode(){
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let c = '';
+  for (let i=0;i<4;i++) c += chars[Math.floor(Math.random()*chars.length)];
+  return c;
+}
+
+function renderRoomsMenu(){
+  const wrap = h(`<div>
+    <div class="eyebrow">Futcartas</div>
+    <div class="h1" style="font-size:28px;">Jugar en sala</div>
+    <div class="sub">Creá una sala nueva e invitá a otros con el código, o unite a una que ya exista.</div>
+    <div class="panel">
+      <button class="btn btn-primary" id="rm-create" style="margin-bottom:10px;">Crear sala</button>
+      <button class="btn btn-ghost" id="rm-join">Unirme con un código</button>
+    </div>
+    <span class="link-small" id="rm-back">Volver a mi perfil</span>
+  </div>`);
+  wrap.querySelector('#rm-create').onclick = () => { formError=''; render(renderRoomCreateForm()); };
+  wrap.querySelector('#rm-join').onclick = () => { formError=''; render(renderRoomJoinForm()); };
+  wrap.querySelector('#rm-back').onclick = () => { screen='home'; render(renderHome(currentProfile)); };
+  return wrap;
+}
+
+function renderRoomCreateForm(){
+  const wrap = h(`<div>
+    <div class="eyebrow">Nueva sala</div>
+    <div class="h1" style="font-size:28px;">Configurá la sala</div>
+    <div class="panel">
+      <label class="label">¿Qué se gana en cada enfrentamiento?</label>
+      <div class="tabs">
+        <div class="tab active" id="rw-points" data-v="points">Solo puntos</div>
+        <div class="tab" id="rw-cards" data-v="points_cards">Puntos + carta del rival</div>
+      </div>
+      <label class="label">¿Cómo termina la sala?</label>
+      <div class="tabs">
+        <div class="tab active" id="dur-open" data-v="open">Abierta (yo la cierro)</div>
+        <div class="tab" id="dur-fixed" data-v="fixed">Cantidad fija de rondas</div>
+      </div>
+      <div id="rounds-input" style="display:none;">
+        <label class="label">Cantidad de rondas</label>
+        <input class="input" id="rounds-n" type="number" min="1" value="3"/>
+      </div>
+      ${formError ? `<div class="err">${formError}</div>` : ''}
+      <button class="btn btn-primary" id="rc-submit" ${busy?'disabled':''}>${busy?'Creando…':'Crear sala'}</button>
+    </div>
+    <span class="link-small" id="rc-back">Volver</span>
+  </div>`);
+  let rewardMode = 'points';
+  let durationType = 'open';
+  wrap.querySelector('#rw-points').onclick = () => { rewardMode='points'; wrap.querySelector('#rw-points').classList.add('active'); wrap.querySelector('#rw-cards').classList.remove('active'); };
+  wrap.querySelector('#rw-cards').onclick = () => { rewardMode='points_cards'; wrap.querySelector('#rw-cards').classList.add('active'); wrap.querySelector('#rw-points').classList.remove('active'); };
+  wrap.querySelector('#dur-open').onclick = () => { durationType='open'; wrap.querySelector('#dur-open').classList.add('active'); wrap.querySelector('#dur-fixed').classList.remove('active'); wrap.querySelector('#rounds-input').style.display='none'; };
+  wrap.querySelector('#dur-fixed').onclick = () => { durationType='fixed'; wrap.querySelector('#dur-fixed').classList.add('active'); wrap.querySelector('#dur-open').classList.remove('active'); wrap.querySelector('#rounds-input').style.display='block'; };
+  wrap.querySelector('#rc-back').onclick = () => { screen='rooms-menu'; render(renderRoomsMenu()); };
+  wrap.querySelector('#rc-submit').onclick = async () => {
+    formError = '';
+    const fixedRounds = durationType==='fixed' ? parseInt(wrap.querySelector('#rounds-n').value) : null;
+    if (durationType==='fixed' && (!fixedRounds || fixedRounds < 1)) { formError = 'Poné una cantidad de rondas válida.'; render(renderRoomCreateForm()); return; }
+    busy = true; render(renderRoomCreateForm());
+    const code = generateRoomCode();
+    const roomDoc = {
+      code, hostUid: auth.currentUser.uid, hostName: currentProfile.name,
+      status: 'lobby',
+      players: [{ uid: auth.currentUser.uid, name: currentProfile.name, byeCount: 0 }],
+      config: { rewardMode, durationType, fixedRounds },
+      round: null,
+      createdAt: serverTimestamp(),
+    };
+    try {
+      await setDoc(doc(db, 'rooms', code), roomDoc);
+      openRoomLobby(code);
+    } catch (e) {
+      formError = 'No se pudo crear la sala. Probá de nuevo.';
+      busy = false;
+      render(renderRoomCreateForm());
+    }
+  };
+  return wrap;
+}
+
+function renderRoomJoinForm(){
+  const wrap = h(`<div>
+    <div class="eyebrow">Unirse</div>
+    <div class="h1" style="font-size:28px;">Entrá a una sala</div>
+    <div class="panel">
+      <label class="label">Código de sala</label>
+      <input class="input" id="rj-code" placeholder="Ej: RBLM" maxlength="4" style="text-transform:uppercase; letter-spacing:0.2em; font-family:'Space Mono',monospace;"/>
+      ${formError ? `<div class="err">${formError}</div>` : ''}
+      <button class="btn btn-primary" id="rj-submit" ${busy?'disabled':''}>${busy?'Entrando…':'Entrar'}</button>
+    </div>
+    <span class="link-small" id="rj-back">Volver</span>
+  </div>`);
+  wrap.querySelector('#rj-back').onclick = () => { screen='rooms-menu'; render(renderRoomsMenu()); };
+  wrap.querySelector('#rj-submit').onclick = async () => {
+    formError = '';
+    const code = wrap.querySelector('#rj-code').value.trim().toUpperCase();
+    if (code.length < 4) { formError = 'Ingresá el código completo.'; render(renderRoomJoinForm()); return; }
+    busy = true; render(renderRoomJoinForm());
+    try {
+      const snap = await getDoc(doc(db, 'rooms', code));
+      if (!snap.exists()) { formError = 'No encontramos esa sala.'; busy=false; render(renderRoomJoinForm()); return; }
+      const data = snap.data();
+      if (data.status !== 'lobby') { formError = 'Esa sala ya empezó o terminó.'; busy=false; render(renderRoomJoinForm()); return; }
+      if (!data.players.find(p => p.uid === auth.currentUser.uid)) {
+        await updateDoc(doc(db, 'rooms', code), {
+          players: arrayUnion({ uid: auth.currentUser.uid, name: currentProfile.name, byeCount: 0 })
+        });
+      }
+      openRoomLobby(code);
+    } catch (e) {
+      formError = 'No se pudo unir a la sala. Probá de nuevo.';
+      busy = false;
+      render(renderRoomJoinForm());
+    }
+  };
+  return wrap;
+}
+
+function openRoomLobby(code){
+  stopRoomListener();
+  currentRoomCode = code;
+  screen = 'room-lobby';
+  busy = false;
+  unsubscribeRoom = onSnapshot(doc(db, 'rooms', code), (snap) => {
+    if (!snap.exists()) return;
+    currentRoomData = snap.data();
+    if (currentRoomData.status === 'lobby') {
+      if (screen === 'room-lobby' || screen === 'room-playing') { screen='room-lobby'; render(renderRoomLobby(currentRoomData)); }
+    } else if (currentRoomData.status === 'playing') {
+      screen = 'room-playing';
+      render(renderRoomPlayingPlaceholder(currentRoomData));
+    }
+  });
+}
+
+function renderRoomPlayingPlaceholder(data){
+  const wrap = h(`<div>
+    <div class="eyebrow">Sala ${data.code} · en juego</div>
+    <div class="h1" style="font-size:26px;">¡La sala ya arrancó!</div>
+    <div class="panel">
+      <div class="small-note">La mecánica de rondas (sorteo de parejas, mano, categoría y resultado) es el próximo paso que vamos a construir — todavía no está activa en esta versión. Por ahora, esta pantalla solo confirma que la sala pasó a estado "jugando" correctamente.</div>
+    </div>
+    <span class="link-small" id="rp-leave">Salir de la sala</span>
+  </div>`);
+  wrap.querySelector('#rp-leave').onclick = () => {
+    stopRoomListener();
+    currentRoomCode = null; currentRoomData = null;
+    screen = 'home'; render(renderHome(currentProfile));
+  };
+  return wrap;
+}
+
+function renderRoomLobby(data){
+  const isHost = data.hostUid === auth.currentUser.uid;
+  const rewardLabel = data.config.rewardMode === 'points_cards' ? 'Puntos + carta del rival' : 'Solo puntos';
+  const durationLabel = data.config.durationType === 'fixed' ? `${data.config.fixedRounds} ronda(s)` : 'Abierta (la cierra el creador)';
+  const wrap = h(`<div>
+    <div class="eyebrow">Sala de espera</div>
+    <div class="h1" style="font-size:28px;">Futcartas</div>
+    <div class="code-display" style="font-family:'Space Mono',monospace; font-size:38px; font-weight:700; letter-spacing:0.15em; text-align:center; color:var(--floodlight); background:rgba(0,0,0,0.3); border:2px dashed var(--pitch-line); border-radius:12px; padding:14px 0; margin:10px 0 18px;">${data.code}</div>
+    <div class="small-note" style="margin-bottom:16px;">Compartí este código para que se sumen. Premio: <b style="color:var(--chalk)">${rewardLabel}</b> · Duración: <b style="color:var(--chalk)">${durationLabel}</b></div>
+    <div class="panel">
+      <label class="label">Jugadores (${data.players.length})</label>
+      ${data.players.map(p => `<div class="fc-player-row" style="display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--pitch-line);font-size:14.5px;">
+        <span style="width:8px;height:8px;border-radius:50%;background:#4CD97D;box-shadow:0 0 6px #4CD97D;"></span>
+        ${p.name}${p.uid===data.hostUid?'<span class="badge-admin" style="background:var(--floodlight);color:#1A1200;">HOST</span>':''}
+      </div>`).join('')}
+    </div>
+    ${isHost ? `<button class="btn btn-primary" id="rl-start" ${data.players.length<2?'disabled':''}>Iniciar sala</button>
+    ${data.players.length<2 ? '<div class="small-note">Necesitás al menos 2 jugadores.</div>' : ''}` :
+    `<div class="small-note">Esperando a que ${data.hostName} inicie la sala…</div>`}
+    <span class="link-small" id="rl-leave">Salir de la sala</span>
+  </div>`);
+  if (isHost) {
+    wrap.querySelector('#rl-start').onclick = async () => {
+      await updateDoc(doc(db, 'rooms', data.code), { status: 'playing' });
+    };
+  }
+  wrap.querySelector('#rl-leave').onclick = () => {
+    stopRoomListener();
+    currentRoomCode = null; currentRoomData = null;
+    screen = 'home'; render(renderHome(currentProfile));
+  };
   return wrap;
 }
 
