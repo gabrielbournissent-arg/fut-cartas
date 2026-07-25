@@ -177,20 +177,26 @@ function shuffle(arr){
   for (let i=a.length-1;i>0;i--){ const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
   return a;
 }
-async function getAllowedTeams(){
+async function getDeckPoolConfig(){
   try {
     const snap = await getDoc(doc(db, 'config', 'deckSettings'));
-    if (snap.exists() && Array.isArray(snap.data().allowedTeams) && snap.data().allowedTeams.length > 0) {
-      return snap.data().allowedTeams;
+    if (snap.exists()) {
+      const d = snap.data();
+      return {
+        allowedTeams: (Array.isArray(d.allowedTeams) && d.allowedTeams.length > 0) ? d.allowedTeams : null,
+        excludedPlayers: Array.isArray(d.excludedPlayers) ? d.excludedPlayers : [],
+      };
     }
-  } catch(e) { /* si falla, se usa el pool completo */ }
-  return null; // null = todos los equipos habilitados
+  } catch(e) { /* si falla, se usa el pool completo sin exclusiones */ }
+  return { allowedTeams: null, excludedPlayers: [] };
 }
 async function randomStarterDeck(n=20){
-  const allowedTeams = await getAllowedTeams();
-  const pool = allowedTeams ? REAL_PLAYERS.filter(p => allowedTeams.includes(p.team)) : REAL_PLAYERS;
-  const source = pool.length >= n ? pool : REAL_PLAYERS; // si el pool filtrado quedó muy chico, se completa con todos
-  return shuffle(source).slice(0,n).map((c,i) => ({
+  const { allowedTeams, excludedPlayers } = await getDeckPoolConfig();
+  let pool = allowedTeams ? REAL_PLAYERS.filter(p => allowedTeams.includes(p.team)) : REAL_PLAYERS.slice();
+  pool = pool.filter(p => !excludedPlayers.includes(p.name));
+  const source = pool.length >= n ? pool : REAL_PLAYERS.filter(p => !excludedPlayers.includes(p.name)); // si el pool filtrado quedó muy chico, se completa (sin romper las exclusiones puntuales)
+  const finalSource = source.length >= n ? source : REAL_PLAYERS; // último respaldo si ni así alcanza
+  return shuffle(finalSource).slice(0,n).map((c,i) => ({
     id: 'c_' + Date.now().toString(36) + '_' + i,
     name: c.name, team: c.team, pos: c.pos, stats: c.stats, rareza: 'normal'
   }));
@@ -359,26 +365,33 @@ function renderCreatePlayerPanel(){
   return wrap;
 }
 
-// -------- Panel: elegir qué equipos entran al sorteo del mazo inicial --------
-let deckSettingsCache = null; // {allowedTeams: [...]}
+// -------- Panel: elegir qué equipos y jugadores entran al sorteo del mazo inicial --------
+let deckSettingsCache = null; // {allowedTeams: [...], excludedPlayers: [...]}
 async function loadDeckSettings(){
   if (deckSettingsCache) return deckSettingsCache;
   try {
     const snap = await getDoc(doc(db, 'config', 'deckSettings'));
-    deckSettingsCache = snap.exists() ? snap.data() : { allowedTeams: ALL_TEAMS.slice() };
+    deckSettingsCache = snap.exists() ? snap.data() : { allowedTeams: ALL_TEAMS.slice(), excludedPlayers: [] };
   } catch(e) {
-    deckSettingsCache = { allowedTeams: ALL_TEAMS.slice() };
+    deckSettingsCache = { allowedTeams: ALL_TEAMS.slice(), excludedPlayers: [] };
   }
   if (!deckSettingsCache.allowedTeams || deckSettingsCache.allowedTeams.length === 0) {
     deckSettingsCache.allowedTeams = ALL_TEAMS.slice();
+  }
+  if (!Array.isArray(deckSettingsCache.excludedPlayers)) {
+    deckSettingsCache.excludedPlayers = [];
   }
   return deckSettingsCache;
 }
 function renderDeckPoolPanel(settings){
   const allowed = new Set(settings.allowedTeams);
+  const excluded = new Set(settings.excludedPlayers);
   const wrap = h(`<div class="panel">
     <div class="label" style="margin-bottom:12px;">Equipos habilitados para el mazo inicial (sorteo aleatorio)</div>
-    <div id="team-list" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;"></div>
+    <div id="team-list" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px;"></div>
+    <div class="label" style="margin-bottom:6px;">Jugadores excluidos del sorteo</div>
+    <div class="small-note" style="text-align:left; margin:0 0 12px;">Aunque su equipo esté habilitado arriba, estos jugadores puntuales nunca van a salir en un mazo inicial al azar. Útil para reservar cartas difíciles (ej. Messi) y otorgarlas vos manualmente cuando decidas.</div>
+    <div id="player-list" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; max-height:260px; overflow-y:auto;"></div>
     ${formError ? `<div class="err">${formError}</div>` : ''}
     ${formOk ? `<div class="ok">${formOk}</div>` : ''}
     <button class="btn btn-ghost" id="dp-save" ${busy?'disabled':''}>${busy?'Guardando…':'Guardar selección'}</button>
@@ -395,13 +408,28 @@ function renderDeckPoolPanel(settings){
     };
     list.appendChild(chip);
   });
+  const playerList = wrap.querySelector('#player-list');
+  REAL_PLAYERS.slice().sort((a,b) => a.name.localeCompare(b.name)).forEach(p => {
+    const isExcluded = excluded.has(p.name);
+    const chip = h(`<span class="fc-team-chip" style="font-size:11px;font-family:'Space Mono',monospace;padding:5px 9px;border-radius:14px;border:1.5px solid ${isExcluded?'var(--ember)':'var(--pitch-line)'};color:${isExcluded?'var(--ember)':'var(--chalk-dim)'};background:${isExcluded?'rgba(228,87,46,0.12)':'transparent'};cursor:pointer;">${isExcluded?'🚫 ':''}${p.name}</span>`);
+    chip.onclick = () => {
+      if (excluded.has(p.name)) excluded.delete(p.name); else excluded.add(p.name);
+      const nowExcluded = excluded.has(p.name);
+      chip.style.borderColor = nowExcluded ? 'var(--ember)' : 'var(--pitch-line)';
+      chip.style.color = nowExcluded ? 'var(--ember)' : 'var(--chalk-dim)';
+      chip.style.background = nowExcluded ? 'rgba(228,87,46,0.12)' : 'transparent';
+      chip.textContent = (nowExcluded?'🚫 ':'') + p.name;
+    };
+    playerList.appendChild(chip);
+  });
   wrap.querySelector('#dp-save').onclick = async () => {
     formError=''; formOk='';
     if (allowed.size === 0) { formError = 'Dejá al menos un equipo habilitado.'; render(renderHome(currentProfile)); return; }
     busy = true; render(renderHome(currentProfile));
     try {
-      await setDoc(doc(db, 'config', 'deckSettings'), { allowedTeams: Array.from(allowed) });
-      deckSettingsCache = { allowedTeams: Array.from(allowed) };
+      const newSettings = { allowedTeams: Array.from(allowed), excludedPlayers: Array.from(excluded) };
+      await setDoc(doc(db, 'config', 'deckSettings'), newSettings);
+      deckSettingsCache = newSettings;
       formOk = 'Listo, esta selección se va a usar en los próximos mazos iniciales.';
     } catch(e) {
       formError = 'No se pudo guardar. Probá de nuevo.';
