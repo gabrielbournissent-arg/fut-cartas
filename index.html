@@ -229,6 +229,11 @@ let formOk = '';
 let busy = false;
 
 function h(html){ const d = document.createElement('div'); d.innerHTML = html.trim(); return d.firstElementChild; }
+function trFromHtml(html){
+  const table = document.createElement('table');
+  table.innerHTML = `<tbody>${html.trim()}</tbody>`;
+  return table.querySelector('tr');
+}
 function render(node){ root.innerHTML = ''; root.appendChild(node); }
 
 // -------- Pantalla: acceso de jugador (usuario + código) --------
@@ -432,7 +437,7 @@ function renderDeckPoolPanel(settings){
   Object.keys(rowsByTeam).sort().forEach(team => {
     rowsByTeam[team].forEach(p => {
       const on = !excluded.has(p.name);
-      const row = h(`<tr style="border-bottom:1px solid var(--pitch-line); color:${on?'var(--chalk)':'var(--chalk-dim)'};">
+      const row = trFromHtml(`<tr style="border-bottom:1px solid var(--pitch-line); color:${on?'var(--chalk)':'var(--chalk-dim)'};">
         <td style="padding:5px 8px;"><input type="checkbox" ${on?'checked':''} data-name="${p.name}"/></td>
         <td style="padding:5px 8px;">${p.name}</td>
         <td style="padding:5px 8px;">${p.team}</td>
@@ -685,11 +690,12 @@ function renderHome(profile){
   if (isAdmin) {
     const slot = wrap.querySelector('#admin-slot');
     slot.appendChild(renderCreatePlayerPanel());
-    loadDeckSettings().then(settings => { slot.appendChild(renderDeckPoolPanel(settings)); });
+    loadDeckSettings().then(settings => { slot.appendChild(renderDeckPoolPanel(settings)); })
+      .catch(e => { slot.appendChild(h(`<div class="panel"><div class="err">No se pudo cargar el mazo de jugadores: ${e.message}</div></div>`)); });
     loadAllPlayers().then(players => {
       slot.appendChild(renderGrantCardPanel(players));
       slot.appendChild(renderGrantAvatarPanel(players));
-    });
+    }).catch(e => { slot.appendChild(h(`<div class="panel"><div class="err">No se pudieron cargar los paneles de jugadores: ${e.message}</div></div>`)); });
   }
   const grid = wrap.querySelector('#grid');
   profile.cards.forEach(c => {
