@@ -78,7 +78,7 @@ body {
 </head>
 <body>
 <div id="app"><div class="spinner">Cargando…</div></div>
-<div id="version-badge" style="position:fixed; bottom:8px; right:10px; font-family:'Space Mono',monospace; font-size:10px; color:rgba(242,239,228,0.35); z-index:999; pointer-events:none;">v0.14</div>
+<div id="version-badge" style="position:fixed; bottom:8px; right:10px; font-family:'Space Mono',monospace; font-size:10px; color:rgba(242,239,228,0.35); z-index:999; pointer-events:none;">v0.16</div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
@@ -177,6 +177,24 @@ const REAL_PLAYERS = [
   {name:"René Higuita", pos:"Arquero", team:"Selección Colombia", stats:{ata:20,def:80,pas:75,reg:60,fis:70}},
   {name:"Carlos Tevez", pos:"Delantero", team:"Selección Argentina", stats:{ata:88,def:35,pas:72,reg:85,fis:82}},
   {name:"Sergio Agüero", pos:"Delantero", team:"Selección Argentina", stats:{ata:91,def:20,pas:70,reg:78,fis:75}},
+  {name:"Leandro Paredes", pos:"Mediocampista", team:"Boca Juniors", stats:{ata:70,def:65,pas:88,reg:75,fis:78}},
+  {name:"Marcelo Weigandt", pos:"Defensor", team:"Boca Juniors", stats:{ata:55,def:78,pas:72,reg:65,fis:80}},
+  {name:"Nicolás Orsini", pos:"Delantero", team:"Boca Juniors", stats:{ata:82,def:30,pas:65,reg:72,fis:80}},
+  {name:"Norberto Briasco", pos:"Delantero", team:"Boca Juniors", stats:{ata:80,def:32,pas:68,reg:75,fis:78}},
+  {name:"Juan Ramírez", pos:"Mediocampista", team:"Boca Juniors", stats:{ata:72,def:55,pas:80,reg:78,fis:70}},
+  {name:"Adam Bareiro", pos:"Delantero", team:"Boca Juniors", stats:{ata:86,def:25,pas:68,reg:78,fis:85}},
+  {name:"Manuel Neuer", pos:"Arquero", team:"Bayern Múnich", stats:{ata:16,def:89,pas:78,reg:42,fis:78}},
+  {name:"Gianluigi Donnarumma", pos:"Arquero", team:"Manchester City", stats:{ata:15,def:91,pas:72,reg:38,fis:85}},
+  {name:"Yassine Bono", pos:"Arquero", team:"Al Hilal", stats:{ata:14,def:87,pas:70,reg:45,fis:80}},
+  {name:"Vozinha", pos:"Arquero", team:"Selección Cabo Verde", stats:{ata:12,def:82,pas:60,reg:35,fis:75}},
+  {name:"Santiago Beltrán", pos:"Arquero", team:"River Plate", stats:{ata:13,def:80,pas:65,reg:38,fis:82}},
+  {name:"Juan Musso", pos:"Arquero", team:"Selección Argentina", stats:{ata:13,def:83,pas:68,reg:36,fis:80}},
+  {name:"Mike Maignan", pos:"Arquero", team:"Selección Francia", stats:{ata:15,def:88,pas:75,reg:45,fis:82}},
+  {name:"Unai Simón", pos:"Arquero", team:"Selección España", stats:{ata:14,def:85,pas:74,reg:40,fis:78}},
+  {name:"David Raya", pos:"Arquero", team:"Selección España", stats:{ata:13,def:84,pas:78,reg:42,fis:75}},
+  {name:"Marc-André ter Stegen", pos:"Arquero", team:"Barcelona", stats:{ata:14,def:87,pas:80,reg:40,fis:78}},
+  {name:"Diogo Costa", pos:"Arquero", team:"Selección Portugal", stats:{ata:14,def:85,pas:72,reg:42,fis:79}},
+  {name:"Keylor Navas", pos:"Arquero", team:"Selección Costa Rica", stats:{ata:15,def:82,pas:65,reg:40,fis:75}},
 ];
 
 const ALL_TEAMS = [...new Set(REAL_PLAYERS.map(p => p.team))].sort();
@@ -408,6 +426,68 @@ function traducirError(code){
 }
 
 // -------- Pantalla: crear jugador (solo admin) --------
+// -------- Panel: lista de todos los jugadores, con buscador y bloqueo --------
+function renderPlayerListPanel(players){
+  const wrap = h(`<div class="panel">
+    <div class="label" style="margin-bottom:8px;">Jugadores creados (${players.length})</div>
+    <input class="input" id="pl-search" placeholder="Buscar por nombre o usuario…" style="margin-bottom:10px;"/>
+    <div style="overflow-x:auto;">
+      <table style="width:100%; border-collapse:collapse; font-size:12px; font-family:'Space Mono',monospace; white-space:nowrap;">
+        <thead>
+          <tr style="border-bottom:1.5px solid var(--pitch-line); color:var(--chalk-dim); text-align:left;">
+            <th style="padding:6px 8px;">Nombre</th>
+            <th style="padding:6px 8px;">Usuario</th>
+            <th style="padding:6px 8px;">Puntos</th>
+            <th style="padding:6px 8px;">Cartas</th>
+            <th style="padding:6px 8px;">Bloqueo</th>
+          </tr>
+        </thead>
+        <tbody id="pl-table-body"></tbody>
+      </table>
+    </div>
+  </div>`);
+  const tbody = wrap.querySelector('#pl-table-body');
+  players.forEach(p => {
+    const row = trFromHtml(`<tr data-search="${(p.name+' '+p.username).toLowerCase()}" style="border-bottom:1px solid var(--pitch-line);">
+      <td style="padding:5px 8px;">${p.name}${p.role==='admin'?' <span class="badge-admin" style="font-size:8px;">ADMIN</span>':''}</td>
+      <td style="padding:5px 8px;">${p.username}</td>
+      <td style="padding:5px 8px;">${p.points}</td>
+      <td style="padding:5px 8px;">${p.cardsCount}</td>
+      <td style="padding:5px 8px;"></td>
+    </tr>`);
+    const blockCell = row.querySelectorAll('td')[4];
+    const select = document.createElement('select');
+    select.className = 'input';
+    select.style.cssText = 'margin:0;padding:4px 6px;font-size:11px;width:auto;';
+    select.innerHTML = `
+      <option value="none">Sin bloqueo</option>
+      <option value="total">Bloqueo total</option>
+      <option value="parcial">Bloqueo parcial</option>`;
+    select.value = p.blocked ? (p.blockType || 'total') : 'none';
+    select.onchange = async () => {
+      const v = select.value;
+      try {
+        if (v === 'none') {
+          await updateDoc(doc(db, 'users', p.uid), { blocked: false, blockType: null });
+        } else {
+          await updateDoc(doc(db, 'users', p.uid), { blocked: true, blockType: v });
+        }
+        p.blocked = v !== 'none'; p.blockType = v === 'none' ? null : v;
+        allPlayersCache = null;
+      } catch(e) { alert('No se pudo actualizar el bloqueo. Probá de nuevo.'); }
+    };
+    blockCell.appendChild(select);
+    tbody.appendChild(row);
+  });
+  wrap.querySelector('#pl-search').oninput = (e) => {
+    const term = e.target.value.trim().toLowerCase();
+    tbody.querySelectorAll('tr').forEach(row => {
+      row.style.display = row.dataset.search.includes(term) ? '' : 'none';
+    });
+  };
+  return wrap;
+}
+
 function renderCreatePlayerPanel(){
   const wrap = h(`<div class="panel">
     <div class="label" style="margin-bottom:12px;">Crear cuenta de jugador nuevo</div>
@@ -569,7 +649,14 @@ async function loadAllPlayers(){
   if (allPlayersCache) return allPlayersCache;
   try {
     const snap = await getDocs(collection(db, 'users'));
-    allPlayersCache = snap.docs.map(d => ({ uid: d.id, name: d.data().name, username: d.data().username || '' }));
+    allPlayersCache = snap.docs.map(d => {
+      const v = d.data();
+      return {
+        uid: d.id, name: v.name, username: v.username || '', email: v.email || '',
+        points: v.points || 0, cardsCount: (v.cards||[]).length,
+        blocked: !!v.blocked, blockType: v.blockType || null, role: v.role || 'player',
+      };
+    });
   } catch(e) { allPlayersCache = []; }
   return allPlayersCache;
 }
@@ -642,6 +729,70 @@ function renderGrantAvatarPanel(players){
       formOk = `Avatar "${getAvatar(avatarId).label}" habilitado correctamente.`;
     } catch(e) {
       formError = 'No se pudo otorgar el avatar. Probá de nuevo.';
+    }
+    busy = false;
+    render(renderHome(currentProfile));
+  };
+  return wrap;
+}
+
+// -------- Panel: restablecer usuario/código de un jugador que lo olvidó --------
+async function resetPlayerCode(oldUid, newCode){
+  const oldSnap = await getDoc(doc(db, 'users', oldUid));
+  if (!oldSnap.exists()) throw new Error('No se encontró ese jugador.');
+  const oldData = oldSnap.data();
+  const email = oldData.email;
+  let cred;
+  try {
+    cred = await createUserWithEmailAndPassword(authSecondary, email, newCode);
+  } catch(e) {
+    if (e.code === 'auth/email-already-in-use') {
+      const err = new Error('EMAIL_IN_USE');
+      err.email = email;
+      throw err;
+    }
+    throw e;
+  }
+  const newUid = cred.user.uid;
+  const preserved = { ...oldData };
+  delete preserved.createdAt;
+  preserved.uid = newUid;
+  await setDoc(doc(dbSecondary, 'users', newUid), { ...preserved, createdAt: serverTimestamp() });
+  await signOut(authSecondary);
+  try { await updateDoc(doc(db, 'users', oldUid), { blocked: true, blockType: 'total' }); } catch(e) { /* no crítico */ }
+  allPlayersCache = null; // se recarga la próxima vez que se pida
+}
+function renderResetCodePanel(players){
+  const wrap = h(`<div class="panel">
+    <div class="label" style="margin-bottom:8px;">Restablecer usuario que olvidó su código</div>
+    <div class="small-note" style="text-align:left; margin:0 0 12px;">Este proceso conserva los puntos y las cartas del jugador. La primera vez que lo uses para una cuenta, puede que te pida borrar antes la cuenta anterior desde la consola de Firebase — es un paso único por jugador.</div>
+    <label class="label">Jugador</label>
+    <select class="input" id="rc-player">
+      ${players.map(p => `<option value="${p.uid}">${p.name}${p.username ? ' (' + p.username + ')' : ''}</option>`).join('')}
+    </select>
+    <label class="label">Código nuevo (6 dígitos)</label>
+    <input class="input" id="rc-newcode" inputmode="numeric" placeholder="Ej: 731420"/>
+    ${formError ? `<div class="err">${formError}</div>` : ''}
+    ${formOk ? `<div class="ok">${formOk}</div>` : ''}
+    <button class="btn btn-ghost" id="rc-submit" ${busy?'disabled':''}>${busy?'Restableciendo…':'Restablecer código'}</button>
+  </div>`);
+  wrap.querySelector('#rc-submit').onclick = async () => {
+    formError=''; formOk='';
+    const uid = wrap.querySelector('#rc-player').value;
+    const newCode = wrap.querySelector('#rc-newcode').value.trim();
+    if (!uid) { formError = 'No hay jugadores para elegir todavía.'; render(renderHome(currentProfile)); return; }
+    if (!/^[0-9]{6}$/.test(newCode)) { formError = 'El código debe tener exactamente 6 números.'; render(renderHome(currentProfile)); return; }
+    busy = true; render(renderHome(currentProfile));
+    try {
+      await resetPlayerCode(uid, newCode);
+      const player = players.find(p => p.uid === uid);
+      formOk = `Listo. El jugador ya puede entrar con usuario "${player ? player.username : ''}" y el código nuevo.`;
+    } catch(e) {
+      if (e.message === 'EMAIL_IN_USE') {
+        formError = `Antes de continuar, andá a Firebase → Authentication → Users, buscá "${e.email}" y eliminá esa cuenta. Después volvé a tocar "Restablecer código".`;
+      } else {
+        formError = 'No se pudo restablecer el código. Probá de nuevo.';
+      }
     }
     busy = false;
     render(renderHome(currentProfile));
@@ -738,6 +889,7 @@ function renderHome(profile){
   const platas = profile.cards.filter(c => c.rareza === 'plata').length;
   const oros = profile.cards.filter(c => c.rareza === 'oro').length;
   const isAdmin = profile.role === 'admin';
+  const isPartiallyBlocked = profile.blocked && profile.blockType === 'parcial';
   const wrap = h(`<div>
     <div class="top-row">
       <div class="eyebrow">Futcartas</div>
@@ -745,13 +897,14 @@ function renderHome(profile){
     </div>
     <div class="h1" style="font-size:28px;">${avatarGlyphHtml(getAvatar(profile.avatar), 24)} Hola, ${profile.name}${isAdmin ? '<span class="badge-admin">ADMIN</span>' : ''}</div>
     <div class="sub">Este es tu perfil: tus puntos y tu colección de cartas.</div>
+    ${isPartiallyBlocked ? `<div class="panel" style="border-color:var(--ember);"><div class="small-note" style="color:var(--chalk);">⚠️ Tu administrador restringió temporalmente tu cuenta: podés ver tu perfil, pero no podés jugar partidas ni intercambiar cartas por ahora.</div></div>` : ''}
     <div class="stat-cards">
       <div class="stat-card"><div class="num">${profile.points}</div><div class="lbl">Puntos</div></div>
       <div class="stat-card"><div class="num">${profile.cards.length}</div><div class="lbl">Cartas totales</div></div>
       <div class="stat-card"><div class="num">${platas}</div><div class="lbl">Plata</div></div>
       <div class="stat-card"><div class="num">${oros}</div><div class="lbl">Oro</div></div>
     </div>
-    <button class="btn btn-primary" id="go-rooms" style="margin-bottom:16px;">Jugar en sala</button>
+    <button class="btn btn-primary" id="go-rooms" style="margin-bottom:16px;" ${isPartiallyBlocked?'disabled':''}>Jugar en sala</button>
     <div id="avatar-slot"></div>
     <div id="teamname-slot"></div>
     <div id="admin-slot"></div>
@@ -769,8 +922,10 @@ function renderHome(profile){
     loadDeckSettings().then(settings => { slot.appendChild(renderDeckPoolPanel(settings)); })
       .catch(e => { slot.appendChild(h(`<div class="panel"><div class="err">No se pudo cargar el mazo de jugadores: ${e.message}</div></div>`)); });
     loadAllPlayers().then(players => {
+      slot.appendChild(renderPlayerListPanel(players));
       slot.appendChild(renderGrantCardPanel(players));
       slot.appendChild(renderGrantAvatarPanel(players));
+      slot.appendChild(renderResetCodePanel(players));
     }).catch(e => { slot.appendChild(h(`<div class="panel"><div class="err">No se pudieron cargar los paneles de jugadores: ${e.message}</div></div>`)); });
   }
   const grid = wrap.querySelector('#grid');
@@ -796,8 +951,11 @@ function renderHome(profile){
 let currentRoomCode = null;
 let currentRoomData = null;
 let unsubscribeRoom = null;
+let duelTimerInterval = null;
+function clearDuelTimer(){ if (duelTimerInterval) { clearInterval(duelTimerInterval); duelTimerInterval = null; } }
 
 function stopRoomListener(){
+  clearDuelTimer();
   if (unsubscribeRoom) { unsubscribeRoom(); unsubscribeRoom = null; }
 }
 function roomsKey(code){ return code; }
@@ -991,7 +1149,8 @@ function buildPairing(players){
     pairs.push({
       players: [a.uid, b.uid],
       names: { [a.uid]: a.name, [b.uid]: b.name },
-      mano, category: null, cardsInPlay: null, winnerUid: null, tie: false, resolved: false, appliedBy: []
+      mano, category: null, cardsInPlay: null, winnerUid: null, tie: false, resolved: false, appliedBy: [],
+      startedAt: Date.now(), timeout: false
     });
   }
   return { pairs, restingUid, updatedPlayers: pool };
@@ -1028,6 +1187,25 @@ async function pickDuelCategory(data, pair, category){
   newRound.pairs[idx].tie = tie;
   newRound.pairs[idx].resolved = true;
   await updateDoc(doc(db, 'rooms', data.code), { round: newRound });
+}
+
+async function resolveDuelTimeout(data, pair){
+  if (pair.resolved) return;
+  try {
+    const freshSnap = await getDoc(doc(db, 'rooms', data.code));
+    if (!freshSnap.exists()) return;
+    const fresh = freshSnap.data();
+    if (!fresh.round || fresh.round.number !== data.round.number) return;
+    const idx = fresh.round.pairs.findIndex(p => p.players[0]===pair.players[0] && p.players[1]===pair.players[1]);
+    if (idx < 0 || fresh.round.pairs[idx].resolved) return;
+    const opponentUid = pair.players.find(u => u !== pair.mano);
+    fresh.round.pairs[idx].resolved = true;
+    fresh.round.pairs[idx].timeout = true;
+    fresh.round.pairs[idx].winnerUid = opponentUid;
+    fresh.round.pairs[idx].tie = false;
+    fresh.round.pairs[idx].category = null;
+    await updateDoc(doc(db, 'rooms', data.code), { round: fresh.round });
+  } catch(e) { /* si falla, el otro jugador lo puede volver a intentar */ }
 }
 
 async function markDuelApplied(data, pair, myUid){
@@ -1094,10 +1272,39 @@ function renderDuelCard(card, pickable, onPick){
   return div;
 }
 
+const WIN_PHRASES = [
+  "¡A seguir así, sos un ganador!",
+  "¡Grande! Esa la ganaste con todo.",
+  "¡Vas con todo, no aflojes!",
+  "¡Así se juega, crack!",
+];
+const LOSE_PHRASES = [
+  "Todavía podés remontar, no bajes los brazos.",
+  "La próxima la ganás vos, seguí así.",
+  "No pasa nada, quedan más rondas.",
+  "Un tropiezo no es una caída, ¡vamos de nuevo!",
+];
+const TIE_PHRASES = [
+  "¡Estuvo cabeza a cabeza! Sigue la ronda.",
+  "¡Parejo el duelo! A por el próximo.",
+];
+const WAITING_PHRASES = [
+  "¿Qué esperás? Pronto saldrás a la cancha…",
+  "Calentando en el banco… ¡ya te toca!",
+  "Prepará tu carta, en breve arrancás.",
+];
+function randomPhrase(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
 function renderDuelReveal(pair, myUid){
+  const wrap = h(`<div></div>`);
+  if (pair.timeout) {
+    wrap.appendChild(h(`<div class="panel"><div class="small-note">${pair.names[pair.mano]} no eligió la categoría a tiempo — pasa <b style="color:var(--chalk)">${pair.names[pair.winnerUid]}</b> a la próxima ronda.</div></div>`));
+    const iWon = pair.winnerUid === myUid;
+    wrap.appendChild(h(`<div class="small-note" style="color:${iWon?'#7CE0A6':'var(--chalk-dim)'};">${iWon ? randomPhrase(WIN_PHRASES) : randomPhrase(LOSE_PHRASES)}</div>`));
+    return wrap;
+  }
   const [uidA, uidB] = pair.players;
   const cat = pair.category;
-  const wrap = h(`<div></div>`);
   [uidA, uidB].forEach(uid => {
     const card = pair.cardsInPlay[uid];
     if (!card) return;
@@ -1110,7 +1317,12 @@ function renderDuelReveal(pair, myUid){
       </div>
     </div>`));
   });
-  if (pair.tie) wrap.appendChild(h(`<div class="small-note">¡Empate! No se mueven puntos ni cartas en este duelo.</div>`));
+  if (pair.tie) {
+    wrap.appendChild(h(`<div class="small-note">¡Empate! No se mueven puntos ni cartas en este duelo. ${randomPhrase(TIE_PHRASES)}</div>`));
+  } else {
+    const iWon = pair.winnerUid === myUid;
+    wrap.appendChild(h(`<div class="small-note" style="color:${iWon?'#7CE0A6':'var(--chalk-dim)'};">${iWon ? randomPhrase(WIN_PHRASES) : randomPhrase(LOSE_PHRASES)}</div>`));
+  }
   return wrap;
 }
 
@@ -1152,7 +1364,7 @@ function renderRoomPlaying(data){
     wrap.appendChild(h(`<div class="panel"><div class="small-note">Preparando la ronda…</div></div>`));
   } else if (round.restingUid === myUid) {
     playChallengeSound('resting-' + data.code + '-' + round.number);
-    wrap.appendChild(h(`<div class="panel"><div class="small-note">Descansás esta ronda — te toca la próxima.</div></div>`));
+    wrap.appendChild(h(`<div class="panel"><div class="small-note">Descansás esta ronda — te toca la próxima. ${randomPhrase(WAITING_PHRASES)}</div></div>`));
   } else {
     const pair = round.pairs.find(p => p.players.includes(myUid));
     if (!pair) {
@@ -1164,8 +1376,27 @@ function renderRoomPlaying(data){
       wrap.appendChild(h(`<div class="small-note" style="margin-bottom:10px;">Rival: <b style="color:var(--chalk)">${pair.names[opponentUid]}</b>${isMano && !pair.resolved ? ' · Sos la mano, elegí la categoría' : ''}</div>`));
       if (!pair.resolved) {
         const myCard = pair.cardsInPlay[myUid];
-        wrap.appendChild(renderDuelCard(myCard, isMano, (k) => pickDuelCategory(data, pair, k)));
+        wrap.appendChild(renderDuelCard(myCard, isMano, (k) => { clearDuelTimer(); pickDuelCategory(data, pair, k); }));
         if (!isMano) wrap.appendChild(h(`<div class="small-note">Esperando a que ${pair.names[pair.mano]} elija la categoría…</div>`));
+        const timerEl = h(`<div class="small-note" style="font-family:'Space Mono',monospace;"></div>`);
+        wrap.appendChild(timerEl);
+        clearDuelTimer();
+        const startedAt = pair.startedAt || Date.now();
+        duelTimerInterval = setInterval(() => {
+          const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+          const remaining = 60 - elapsed;
+          if (remaining > 0) {
+            timerEl.textContent = `Tiempo para elegir: ${remaining}s`;
+            timerEl.style.color = 'var(--chalk-dim)';
+          } else if (remaining > -10) {
+            timerEl.textContent = `¡Se acaba el tiempo! ${10 + remaining}s`;
+            timerEl.style.color = 'var(--ember)';
+          } else {
+            timerEl.textContent = 'Tiempo agotado…';
+            clearDuelTimer();
+            resolveDuelTimeout(data, pair);
+          }
+        }, 1000);
       } else {
         wrap.appendChild(renderDuelReveal(pair, myUid));
         applyDuelResultIfNeeded(data, pair, myUid);
@@ -1175,19 +1406,22 @@ function renderRoomPlaying(data){
 
   if (isHost && round) wrap.appendChild(renderHostRoundControls(data));
   const leave = h(`<span class="link-small" id="rp-leave">Salir de la sala</span>`);
-  leave.onclick = () => { stopRoomListener(); currentRoomCode=null; currentRoomData=null; screen='home'; render(renderHome(currentProfile)); };
+  leave.onclick = () => leaveRoom(data);
   wrap.appendChild(leave);
   return wrap;
 }
 
 function renderRoomFinished(data){
-  const floorMsg = data.endReason === 'floor_cards'
-    ? `La sala se cerró automáticamente porque ${data.endReasonName || 'un jugador'} llegó al mínimo de ${MIN_CARDS_FLOOR} cartas permitidas — nadie puede quedarse con menos, para que siempre pueda seguir jugando.`
-    : 'Buen partido — tus puntos y cartas ya quedaron guardados en tu perfil.';
+  let msg = 'Buen partido — tus puntos y cartas ya quedaron guardados en tu perfil.';
+  if (data.endReason === 'floor_cards') {
+    msg = `La sala se cerró automáticamente porque ${data.endReasonName || 'un jugador'} llegó al mínimo de ${MIN_CARDS_FLOOR} cartas permitidas — nadie puede quedarse con menos, para que siempre pueda seguir jugando.`;
+  } else if (data.endReason === 'left_room') {
+    msg = `La sala se cerró porque ${data.endReasonName || 'un jugador'} se fue y no quedaban al menos 2 jugadores para seguir.`;
+  }
   const wrap = h(`<div>
     <div class="eyebrow">Sala ${data.code}</div>
     <div class="h1" style="font-size:26px;">La sala terminó</div>
-    <div class="panel"><div class="small-note">${floorMsg}</div></div>
+    <div class="panel"><div class="small-note">${msg}</div></div>
     <button class="btn btn-primary" id="rf-back">Volver a mi perfil</button>
   </div>`);
   wrap.querySelector('#rf-back').onclick = () => {
@@ -1196,6 +1430,29 @@ function renderRoomFinished(data){
     screen = 'home'; render(renderHome(currentProfile));
   };
   return wrap;
+}
+
+async function leaveRoom(data){
+  const myUid = auth.currentUser.uid;
+  try {
+    const snap = await getDoc(doc(db, 'rooms', data.code));
+    if (snap.exists()) {
+      const fresh = snap.data();
+      if (fresh.status !== 'finished') {
+        const remaining = fresh.players.filter(p => p.uid !== myUid);
+        if (remaining.length < 2) {
+          await updateDoc(doc(db, 'rooms', data.code), {
+            players: remaining, status: 'finished', endReason: 'left_room', endReasonName: currentProfile.name
+          });
+        } else {
+          await updateDoc(doc(db, 'rooms', data.code), { players: remaining });
+        }
+      }
+    }
+  } catch(e) { /* si falla, igual dejamos que el jugador salga de su lado */ }
+  stopRoomListener();
+  currentRoomCode = null; currentRoomData = null;
+  screen = 'home'; render(renderHome(currentProfile));
 }
 
 function renderRoomLobby(data){
@@ -1225,11 +1482,7 @@ function renderRoomLobby(data){
       await startRoomRound(data, 1);
     };
   }
-  wrap.querySelector('#rl-leave').onclick = () => {
-    stopRoomListener();
-    currentRoomCode = null; currentRoomData = null;
-    screen = 'home'; render(renderHome(currentProfile));
-  };
+  wrap.querySelector('#rl-leave').onclick = () => leaveRoom(data);
   return wrap;
 }
 
@@ -1239,7 +1492,14 @@ onAuthStateChanged(auth, async (user) => {
   try {
     const snap = await getDoc(doc(db, 'users', user.uid));
     if (snap.exists()) {
-      render(renderHome(snap.data()));
+      const profile = snap.data();
+      if (profile.blocked && profile.blockType === 'total') {
+        await signOut(auth);
+        screen='player-login'; formError = 'Tu cuenta está bloqueada. Hablá con tu administrador.';
+        render(renderPlayerLogin());
+        return;
+      }
+      render(renderHome(profile));
     } else {
       const fallback = {
         uid: user.uid, name: user.displayName || 'Jugador', email: user.email,
