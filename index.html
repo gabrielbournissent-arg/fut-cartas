@@ -76,6 +76,8 @@ body {
 .spinner { text-align:center; padding:60px 0; color:var(--chalk-dim); font-family:'Space Mono',monospace; }
 .badge-admin { display:inline-block; font-family:'Space Mono',monospace; font-size:10px; background:var(--ember); color:var(--chalk); padding:2px 8px; border-radius:10px; margin-left:8px; vertical-align:middle; }@keyframes fc-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,209,102,0.35); } 50% { box-shadow: 0 0 0 10px rgba(255,209,102,0); } }
 @keyframes fc-pop { 0% { transform: scale(0.85); opacity: 0; } 60% { transform: scale(1.05); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes fc-confetti-fall { 0% { transform: translateY(-10vh) rotate(0deg); opacity:1; } 100% { transform: translateY(112vh) rotate(720deg); opacity:0.9; } }
+@keyframes fc-ball-roll { 0% { transform: translateX(0) rotate(0deg); } 100% { transform: translateX(calc(100vw + 60px)) rotate(1080deg); } }
 </style>
 </head>
 <body>
@@ -1018,6 +1020,7 @@ function renderRoomCreateForm(){
       <div class="tabs">
         <div class="tab active" id="gm-cards" data-v="duels">Cartas cara a cara</div>
         <div class="tab" id="gm-mental" data-v="mental">Duelo Mental</div>
+        <div class="tab" id="gm-trivia" data-v="trivia">Batalla de Trivia</div>
       </div>
       <div class="small-note" style="text-align:left; margin:6px 0 16px;" id="gm-explain">El clásico: comparás atributos de tu carta contra la de otros jugadores.</div>
       <div id="duels-config">
@@ -1040,6 +1043,9 @@ function renderRoomCreateForm(){
       <div id="mental-config" style="display:none;">
         <div class="small-note" style="text-align:left; margin:0 0 12px;">Se juega en tandas de 7 preguntas. Al terminar cada tanda, se te va a preguntar si querés otra.</div>
       </div>
+      <div id="trivia-config" style="display:none;">
+        <div class="small-note" style="text-align:left; margin:0 0 12px;">Preguntas generales de fútbol (Mundiales, Champions, jugadores, récords) al estilo Kahoot: responden todos a la vez y suma el punto quien acierte más rápido. Se juega en tandas de 8 preguntas.</div>
+      </div>
       ${formError ? `<div class="err">${formError}</div>` : ''}
       <button class="btn btn-primary" id="rc-submit" ${busy?'disabled':''}>${busy?'Creando…':'Crear sala'}</button>
     </div>
@@ -1048,19 +1054,33 @@ function renderRoomCreateForm(){
   let gameMode = 'duels';
   let rewardMode = 'points';
   let durationType = 'open';
+  function selectGameModeTab(id){
+    ['gm-cards','gm-mental','gm-trivia'].forEach(t => wrap.querySelector('#'+t).classList.remove('active'));
+    wrap.querySelector('#'+id).classList.add('active');
+  }
   wrap.querySelector('#gm-cards').onclick = () => {
     gameMode='duels';
-    wrap.querySelector('#gm-cards').classList.add('active'); wrap.querySelector('#gm-mental').classList.remove('active');
+    selectGameModeTab('gm-cards');
     wrap.querySelector('#gm-explain').textContent = 'El clásico: comparás atributos de tu carta contra la de otros jugadores.';
     wrap.querySelector('#duels-config').style.display = 'block';
     wrap.querySelector('#mental-config').style.display = 'none';
+    wrap.querySelector('#trivia-config').style.display = 'none';
   };
   wrap.querySelector('#gm-mental').onclick = () => {
     gameMode='mental';
-    wrap.querySelector('#gm-mental').classList.add('active'); wrap.querySelector('#gm-cards').classList.remove('active');
+    selectGameModeTab('gm-mental');
     wrap.querySelector('#gm-explain').textContent = 'La app muestra dos cartas y una pregunta (ej. "¿Quién tiene mayor velocidad?"). Todos votan a la vez y el que acierta suma puntos. Rápido y para todos juntos.';
     wrap.querySelector('#duels-config').style.display = 'none';
     wrap.querySelector('#mental-config').style.display = 'block';
+    wrap.querySelector('#trivia-config').style.display = 'none';
+  };
+  wrap.querySelector('#gm-trivia').onclick = () => {
+    gameMode='trivia';
+    selectGameModeTab('gm-trivia');
+    wrap.querySelector('#gm-explain').textContent = 'Preguntas generales de fútbol al estilo Kahoot: Mundiales, Champions, jugadores y récords. Responden todos a la vez y gana el punto quien acierte más rápido.';
+    wrap.querySelector('#duels-config').style.display = 'none';
+    wrap.querySelector('#mental-config').style.display = 'none';
+    wrap.querySelector('#trivia-config').style.display = 'block';
   };
   wrap.querySelector('#rw-points').onclick = () => { rewardMode='points'; wrap.querySelector('#rw-points').classList.add('active'); wrap.querySelector('#rw-cards').classList.remove('active'); wrap.querySelector('#rw-explain').textContent = 'Juegan todos juntos en cada ronda: revelan su carta a la vez, la mano (que va rotando) elige la categoría, y gana quien tenga el valor más alto entre todos. Nadie espera afuera.'; };
   wrap.querySelector('#rw-cards').onclick = () => { rewardMode='points_cards'; wrap.querySelector('#rw-cards').classList.add('active'); wrap.querySelector('#rw-points').classList.remove('active'); wrap.querySelector('#rw-explain').textContent = 'Se arman duelos de a dos por ronda (parejas al azar). El que gana se queda con la carta del rival. Si son impares, alguien descansa cada ronda por turnos.'; };
@@ -1081,9 +1101,10 @@ function renderRoomCreateForm(){
       code, hostUid: auth.currentUser.uid, hostName: currentProfile.name,
       status: 'lobby',
       players: [{ uid: auth.currentUser.uid, name: currentProfile.name, byeCount: 0, manoCount: 0 }],
-      config: { gameMode, rewardMode: gameMode==='mental' ? 'points' : rewardMode, durationType, fixedRounds },
+      config: { gameMode, rewardMode: (gameMode==='mental'||gameMode==='trivia') ? 'points' : rewardMode, durationType, fixedRounds },
       round: null,
       mental: null,
+      trivia: null,
       createdAt: serverTimestamp(),
     };
     try {
@@ -1374,6 +1395,8 @@ function renderTogetherRound(data){
         resolveTogetherTimeout(data);
       }
     }, 1000);
+    wrap.appendChild(h(`<div class="small-note" style="margin-top:10px;">Mandale algo a la sala (solo para divertir, no afecta el resultado):</div>`));
+    wrap.appendChild(renderPropsBar(data));
   } else {
     wrap.appendChild(renderTogetherReveal(data, myUid));
     applyTogetherResultIfNeeded(data, myUid);
@@ -1618,10 +1641,35 @@ function renderHostRoundControls(data){
 }
 
 const appliedPropsLocal = new Set();
+function playConfettiEffect(){
+  const colors = ['#FFD166','#E4572E','#7CE0A6','#C7CCD6','#F2EFE4','#4CD97D'];
+  const container = document.createElement('div');
+  container.style.cssText = 'position:fixed; inset:0; pointer-events:none; z-index:9999; overflow:hidden;';
+  for (let i=0;i<44;i++){
+    const piece = document.createElement('div');
+    const color = colors[Math.floor(Math.random()*colors.length)];
+    const left = Math.random()*100;
+    const delay = Math.random()*0.6;
+    const duration = 2.2 + Math.random()*1.6;
+    const w = 5 + Math.random()*6;
+    const hgt = w * (0.35 + Math.random()*0.5);
+    piece.style.cssText = `position:absolute; top:-12px; left:${left}vw; width:${w}px; height:${hgt}px; background:${color}; opacity:0.95; border-radius:2px; animation: fc-confetti-fall ${duration}s ease-in ${delay}s forwards;`;
+    container.appendChild(piece);
+  }
+  document.body.appendChild(container);
+  setTimeout(() => container.remove(), 4200);
+}
+function playBallEffect(){
+  const ball = document.createElement('div');
+  ball.style.cssText = 'position:fixed; bottom:9%; left:-60px; font-size:40px; z-index:9999; pointer-events:none; animation: fc-ball-roll 2.3s linear forwards;';
+  ball.textContent = '⚽';
+  document.body.appendChild(ball);
+  setTimeout(() => ball.remove(), 2400);
+}
 function checkIncomingProps(data){
   const myUid = auth.currentUser.uid;
   const prop = data.lastProp;
-  if (!prop || prop.toUid !== myUid) return;
+  if (!prop || prop.fromUid === myUid) return;
   const key = data.code + '_' + prop.ts;
   if (appliedPropsLocal.has(key)) return;
   appliedPropsLocal.add(key);
@@ -1631,24 +1679,29 @@ function checkIncomingProps(data){
     playDataAudio(CROWD_CHEER_B64, 0.5);
   } else if (prop.type === 'yellow') {
     playDataAudio(CARD_STING_B64, 0.6);
-    speakLine('Te han sacado tarjeta amarilla');
+    speakLine('Tarjeta amarilla');
   } else if (prop.type === 'red') {
     playDataAudio(CARD_STING_B64, 0.7);
-    speakLine('Te han sacado tarjeta roja');
+    speakLine('Tarjeta roja');
   } else if (prop.type === 'offside') {
     playDataAudio(OFFSIDE_B64, 0.7);
     speakLine('Fuera de juego');
   } else if (prop.type === 'penalty') {
     playDataAudio(PENAL_B64, 0.7);
     speakLine('Es penal');
+  } else if (prop.type === 'confetti') {
+    playConfettiEffect();
+    playDataAudio(CROWD_CHEER_B64, 0.4);
+  } else if (prop.type === 'ball') {
+    playBallEffect();
   }
 }
-async function sendProp(data, toUid, type){
+async function sendProp(data, type){
   try {
-    await updateDoc(doc(db, 'rooms', data.code), { lastProp: { toUid, type, fromUid: auth.currentUser.uid, ts: Date.now() } });
+    await updateDoc(doc(db, 'rooms', data.code), { lastProp: { type, fromUid: auth.currentUser.uid, ts: Date.now() } });
   } catch(e) { /* no crítico, es solo para divertir */ }
 }
-function renderPropsBar(data, opponentUid){
+function renderPropsBar(data){
   const wrap = h(`<div style="display:flex; gap:6px; flex-wrap:wrap; margin:10px 0;"></div>`);
   const buttons = [
     { emoji:'🔔', label:'Silbato', type:'whistle' },
@@ -1657,10 +1710,12 @@ function renderPropsBar(data, opponentUid){
     { emoji:'🟥', label:'Roja', type:'red' },
     { emoji:'🚩', label:'Offside', type:'offside' },
     { emoji:'⚠️', label:'¡Penal!', type:'penalty' },
+    { emoji:'🎉', label:'Papelitos', type:'confetti' },
+    { emoji:'⚽', label:'Pelota', type:'ball' },
   ];
   buttons.forEach(b => {
     const btn = h(`<span class="fc-team-chip" style="font-size:12px;font-family:'Space Mono',monospace;padding:6px 10px;border-radius:14px;border:1.5px solid var(--pitch-line);color:var(--chalk-dim);cursor:pointer;">${b.emoji} ${b.label}</span>`);
-    btn.onclick = () => sendProp(data, opponentUid, b.type);
+    btn.onclick = () => sendProp(data, b.type);
     wrap.appendChild(btn);
   });
   return wrap;
@@ -1768,6 +1823,8 @@ function renderMentalQuestion(data){
         revealMentalQuestion(data);
       }
     }, 1000);
+    wrap.appendChild(h(`<div class="small-note" style="margin-top:10px;">Mandale algo a la sala (solo para divertir, no afecta el resultado):</div>`));
+    wrap.appendChild(renderPropsBar(data));
   } else {
     const iVoted = myVote != null;
     const iWasCorrect = myVote === m.correctSide;
@@ -1778,13 +1835,213 @@ function renderMentalQuestion(data){
   return wrap;
 }
 
+// -------- Modo "Batalla de Trivia": preguntas generales de fútbol, gana el más rápido --------
+const TRIVIA_QUESTIONS_PER_ROUND = 8;
+const TRIVIA_QUESTIONS = [
+  { q: "¿Qué selección ganó el Mundial de Rusia 2018?", options: ["Croacia","Francia","Bélgica","Inglaterra"], correct: 1 },
+  { q: "¿Qué selección ganó el Mundial de Catar 2022?", options: ["Francia","Brasil","Argentina","Marruecos"], correct: 2 },
+  { q: "¿Qué selección ganó el primer Mundial de la historia, en 1930?", options: ["Brasil","Uruguay","Italia","Argentina"], correct: 1 },
+  { q: "¿Qué selección ha ganado más Copas del Mundo?", options: ["Alemania","Argentina","Italia","Brasil"], correct: 3 },
+  { q: "¿En qué país se jugó el Mundial 2014?", options: ["Brasil","Sudáfrica","Rusia","Catar"], correct: 0 },
+  { q: "¿Qué selección ganó el Mundial 2010, disputado en Sudáfrica?", options: ["Holanda","España","Alemania","Uruguay"], correct: 1 },
+  { q: "¿Qué selección ganó el Mundial de Alemania 2006?", options: ["Francia","Italia","Brasil","Portugal"], correct: 1 },
+  { q: "¿Qué selección ganó el Mundial de Corea-Japón 2002?", options: ["Alemania","Turquía","Brasil","Corea del Sur"], correct: 2 },
+  { q: "¿Quién es el máximo goleador histórico en Copas del Mundo?", options: ["Lionel Messi","Miroslav Klose","Pelé","Ronaldo Nazário"], correct: 1 },
+  { q: "¿Quién anotó el famoso gol de 'la mano de Dios'?", options: ["Pelé","Diego Maradona","Gabriel Batistuta","Zinedine Zidane"], correct: 1 },
+  { q: "¿En qué Mundial ocurrió el gol de 'la mano de Dios'?", options: ["España 1982","México 1986","Italia 1990","EE.UU. 1994"], correct: 1 },
+  { q: "¿Qué club ha ganado más veces la Champions League?", options: ["AC Milan","Barcelona","Real Madrid","Bayern Múnich"], correct: 2 },
+  { q: "¿Qué club ganó la Champions League 2023?", options: ["Manchester City","Real Madrid","Inter de Milán","Liverpool"], correct: 0 },
+  { q: "¿Qué club ganó la Champions League 2022?", options: ["Liverpool","Real Madrid","Manchester City","Chelsea"], correct: 1 },
+  { q: "¿Quién tiene más Balones de Oro en la historia?", options: ["Cristiano Ronaldo","Lionel Messi","Ronaldinho","Michel Platini"], correct: 1 },
+  { q: "¿Quién ganó más Champions League como jugador: Cristiano Ronaldo o Lionel Messi?", options: ["Cristiano Ronaldo","Lionel Messi","Empataron","Ninguno de los dos"], correct: 0 },
+  { q: "¿Qué futbolista jugó en Manchester United, Real Madrid y Juventus?", options: ["Zinedine Zidane","David Beckham","Cristiano Ronaldo","Wayne Rooney"], correct: 2 },
+  { q: "¿En qué club debutó profesionalmente Lionel Messi?", options: ["Newell's Old Boys","Barcelona","River Plate","Boca Juniors"], correct: 1 },
+  { q: "¿Cuál es el estadio del Real Madrid?", options: ["Camp Nou","Santiago Bernabéu","Wanda Metropolitano","San Mamés"], correct: 1 },
+  { q: "¿Cuál es el estadio del FC Barcelona?", options: ["Santiago Bernabéu","Mestalla","Camp Nou","La Cartuja"], correct: 2 },
+  { q: "¿Qué apodo recibe el FC Barcelona por sus colores?", options: ["Merengues","Blaugrana","Rojiblancos","Bianconeri"], correct: 1 },
+  { q: "¿Qué selección ganó la Eurocopa 2024?", options: ["Inglaterra","España","Alemania","Francia"], correct: 1 },
+  { q: "¿Qué selección ha ganado más Eurocopas?", options: ["Alemania","Francia","España","Italia"], correct: 2 },
+  { q: "¿Cuántos jugadores de campo (sin contar al arquero) tiene un equipo en la cancha?", options: ["9","10","11","12"], correct: 1 },
+  { q: "¿Cada cuántos años se disputa el Mundial de fútbol?", options: ["2 años","3 años","4 años","5 años"], correct: 2 },
+  { q: "¿Qué países organizan el Mundial 2026?", options: ["Catar","Brasil y Argentina","Estados Unidos, México y Canadá","España y Portugal"], correct: 2 },
+  { q: "¿Qué club es conocido como 'los Merengues'?", options: ["Atlético de Madrid","Real Madrid","Sevilla","Valencia"], correct: 1 },
+  { q: "¿Quién fue elegido mejor jugador (Balón de Oro del torneo) del Mundial 2022?", options: ["Kylian Mbappé","Lionel Messi","Luka Modrić","Julián Álvarez"], correct: 1 },
+  { q: "¿En qué club jugaba Cristiano Ronaldo antes de fichar por el Real Madrid?", options: ["Sporting Lisboa","Manchester United","Chelsea","Porto"], correct: 1 },
+  { q: "¿Qué selección ganó la Copa América 2021?", options: ["Brasil","Uruguay","Argentina","Colombia"], correct: 2 },
+];
+function pickTriviaQuestion(excludeIdx){
+  let idx, attempts = 0;
+  do {
+    idx = Math.floor(Math.random()*TRIVIA_QUESTIONS.length);
+    attempts++;
+  } while (idx === excludeIdx && attempts < 10);
+  return idx;
+}
+async function startTriviaQuestion(data, questionNumber){
+  const prevIdx = data.trivia ? data.trivia.qIndex : null;
+  const qIndex = pickTriviaQuestion(prevIdx);
+  await updateDoc(doc(db, 'rooms', data.code), {
+    trivia: { qIndex, questionNumber, answers: {}, revealed: false, startedAt: Date.now() },
+  });
+}
+async function castTriviaAnswer(data, choiceIndex){
+  if (data.trivia.revealed) return;
+  if (data.trivia.answers && data.trivia.answers[auth.currentUser.uid]) return;
+  try {
+    await updateDoc(doc(db, 'rooms', data.code), {
+      [`trivia.answers.${auth.currentUser.uid}`]: { choice: choiceIndex, ts: Date.now() }
+    });
+  } catch(e) { /* no crítico */ }
+}
+async function revealTriviaQuestion(data){
+  try {
+    const freshSnap = await getDoc(doc(db, 'rooms', data.code));
+    if (!freshSnap.exists()) return;
+    const fresh = freshSnap.data();
+    if (!fresh.trivia || fresh.trivia.questionNumber !== data.trivia.questionNumber || fresh.trivia.revealed) return;
+    const newTrivia = { ...fresh.trivia, revealed: true };
+    await updateDoc(doc(db, 'rooms', data.code), { trivia: newTrivia });
+  } catch(e) { /* el otro jugador lo puede volver a intentar */ }
+}
+function computeTriviaWinner(data){
+  const t = data.trivia;
+  const question = TRIVIA_QUESTIONS[t.qIndex];
+  const answers = t.answers || {};
+  let winnerUid = null, bestTs = Infinity;
+  Object.keys(answers).forEach(uid => {
+    const a = answers[uid];
+    if (a.choice === question.correct && a.ts < bestTs) { bestTs = a.ts; winnerUid = uid; }
+  });
+  return winnerUid;
+}
+const appliedTriviaLocal = new Set();
+async function applyTriviaResultIfNeeded(data, myUid){
+  const key = data.code + '_trivia_' + data.trivia.questionNumber;
+  if (appliedTriviaLocal.has(key)) return;
+  appliedTriviaLocal.add(key);
+  const winnerUid = computeTriviaWinner(data);
+  if (winnerUid === myUid) {
+    try {
+      const economy = await getEconomyConfig();
+      await updateDoc(doc(db, 'users', myUid), { points: increment(economy.pointsPerWin) });
+      currentProfile.points = (currentProfile.points||0) + economy.pointsPerWin;
+      await updateDoc(doc(db, 'rooms', data.code), { [`sessionScores.${myUid}`]: increment(1) });
+    } catch(e) { console.error('No se pudo aplicar el resultado', e); }
+  }
+}
+function renderTriviaQuestion(data){
+  const myUid = auth.currentUser.uid;
+  const t = data.trivia;
+  const question = TRIVIA_QUESTIONS[t.qIndex];
+  const wrap = h(`<div></div>`);
+  wrap.appendChild(h(`<div class="eyebrow">Sala ${data.code} · Batalla de Trivia · Pregunta ${t.questionNumber}/${TRIVIA_QUESTIONS_PER_ROUND}</div>`));
+  wrap.appendChild(h(`<div class="h1" style="font-size:22px; text-align:center; line-height:1.25;">${question.q}</div>`));
+  const myAnswer = t.answers ? t.answers[myUid] : null;
+  const revealed = t.revealed;
+  const winnerUid = revealed ? computeTriviaWinner(data) : null;
+  const winnerName = winnerUid ? ((data.players.find(p=>p.uid===winnerUid)||{}).name || '') : null;
+  const grid = h(`<div style="display:flex; flex-direction:column; gap:10px; margin:14px 0;"></div>`);
+  question.options.forEach((opt, idx) => {
+    const isCorrect = revealed && idx === question.correct;
+    const isChosenWrong = revealed && myAnswer && myAnswer.choice === idx && idx !== question.correct;
+    let borderColor = 'var(--pitch-line)';
+    if (revealed) borderColor = isCorrect ? '#4CD97D' : (isChosenWrong ? 'var(--ember)' : 'var(--pitch-line)');
+    else if (myAnswer && myAnswer.choice === idx) borderColor = 'var(--floodlight)';
+    const letters = ['A','B','C','D'];
+    const box = h(`<div class="panel" style="margin-bottom:0; padding:14px 16px; border-color:${borderColor}; ${revealed&&isCorrect?'box-shadow:0 0 0 1px #4CD97D;':''} cursor:${revealed||myAnswer?'default':'pointer'}; display:flex; align-items:center; gap:12px;">
+      <span style="font-family:'Space Mono',monospace; font-weight:700; font-size:13px; color:${isCorrect?'#4CD97D':'var(--floodlight)'}; border:1.5px solid ${isCorrect?'#4CD97D':'var(--pitch-line)'}; border-radius:50%; width:26px; height:26px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">${letters[idx]}</span>
+      <span style="font-size:14.5px;">${opt}</span>
+    </div>`);
+    if (!revealed && !myAnswer) box.onclick = () => { clearDuelTimer(); castTriviaAnswer(data, idx); };
+    grid.appendChild(box);
+  });
+  wrap.appendChild(grid);
+
+  if (!revealed) {
+    const answeredCount = t.answers ? Object.keys(t.answers).length : 0;
+    wrap.appendChild(h(`<div class="small-note">Respondieron ${answeredCount} de ${data.players.length} jugadores. ¡El más rápido en acertar suma el punto!</div>`));
+    const timerEl = h(`<div class="small-note" style="font-family:'Space Mono',monospace;"></div>`);
+    wrap.appendChild(timerEl);
+    clearDuelTimer();
+    const startedAt = t.startedAt || Date.now();
+    duelTimerInterval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+      const remaining = 15 - elapsed;
+      if (remaining > 0) {
+        timerEl.textContent = `Tiempo para responder: ${remaining}s`;
+        timerEl.style.color = 'var(--chalk-dim)';
+      } else {
+        timerEl.textContent = '¡Revelando!';
+        clearDuelTimer();
+        revealTriviaQuestion(data);
+      }
+    }, 1000);
+  } else {
+    const iWon = winnerUid === myUid;
+    wrap.appendChild(renderResultBanner(iWon, false));
+    if (winnerUid) {
+      wrap.appendChild(h(`<div class="small-note">⚡ ${iWon ? '¡Fuiste el más rápido en acertar!' : winnerName + ' fue quien más rápido acertó.'}</div>`));
+    } else {
+      wrap.appendChild(h(`<div class="small-note">Nadie acertó esta vez.</div>`));
+    }
+    applyTriviaResultIfNeeded(data, myUid);
+    wrap.appendChild(h(`<div class="small-note" style="margin-top:10px;">Mandale algo a la sala:</div>`));
+    wrap.appendChild(renderPropsBar(data));
+  }
+  return wrap;
+}
+function renderTriviaHostControls(data){
+  const t = data.trivia;
+  const wrap = h(`<div class="panel"></div>`);
+  if (!t || !t.revealed) {
+    wrap.appendChild(h(`<div class="small-note">Esperando el resultado de esta pregunta…</div>`));
+    return wrap;
+  }
+  if (t.questionNumber >= TRIVIA_QUESTIONS_PER_ROUND) {
+    wrap.appendChild(h(`<div class="label" style="margin-bottom:10px;">¿Otra tanda de ${TRIVIA_QUESTIONS_PER_ROUND} preguntas?</div>`));
+    const yesBtn = h(`<button class="btn btn-primary" style="margin-bottom:8px;">Sí, seguimos</button>`);
+    yesBtn.onclick = async () => { await startTriviaQuestion(data, 1); };
+    const noBtn = h(`<button class="btn btn-ghost">No, finalizar sala</button>`);
+    noBtn.onclick = async () => { await updateDoc(doc(db, 'rooms', data.code), { status:'finished' }); };
+    wrap.appendChild(yesBtn);
+    wrap.appendChild(noBtn);
+  } else {
+    const btn = h(`<button class="btn btn-primary">Siguiente pregunta</button>`);
+    btn.onclick = async () => { await startTriviaQuestion(data, t.questionNumber + 1); };
+    wrap.appendChild(btn);
+  }
+  return wrap;
+}
+
 function renderRoomPlaying(data){
   const myUid = auth.currentUser.uid;
   const isHost = data.hostUid === myUid;
   const isMentalMode = data.config.gameMode === 'mental';
+  const isTriviaMode = data.config.gameMode === 'trivia';
   const round = data.round;
   checkIncomingProps(data);
   const wrap = h(`<div></div>`);
+  if (isTriviaMode) {
+    if (data.players && data.players.length > 0) {
+      const scores = data.sessionScores || {};
+      const scoreWrap = h(`<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;"></div>`);
+      data.players.forEach(p => {
+        const isMe = p.uid === myUid;
+        scoreWrap.appendChild(h(`<span style="font-size:13px;font-family:'Space Mono',monospace;font-weight:${isMe?'700':'400'};padding:7px 12px;border-radius:20px;border:1.5px solid ${isMe?'var(--floodlight)':'var(--pitch-line)'};color:${isMe?'var(--floodlight)':'var(--chalk-dim)'};background:${isMe?'rgba(255,209,102,0.1)':'transparent'};">🏅 ${p.name}: ${scores[p.uid]||0}</span>`));
+      });
+      wrap.appendChild(scoreWrap);
+    }
+    if (!data.trivia) {
+      wrap.appendChild(h(`<div class="panel"><div class="small-note">Preparando la primera pregunta…</div></div>`));
+    } else {
+      wrap.appendChild(renderTriviaQuestion(data));
+    }
+    if (isHost) wrap.appendChild(renderTriviaHostControls(data));
+    const leaveT = h(`<span class="link-small" id="rp-leave">Salir de la sala</span>`);
+    leaveT.onclick = () => leaveRoom(data);
+    wrap.appendChild(leaveT);
+    return wrap;
+  }
   if (isMentalMode) {
     if (data.players && data.players.length > 0) {
       const scores = data.sessionScores || {};
@@ -1860,7 +2117,7 @@ function renderRoomPlaying(data){
           }
         }, 1000);
         wrap.appendChild(h(`<div class="small-note" style="margin-top:10px;">Gastale una jugada a tu rival (solo para divertir, no afecta el resultado):</div>`));
-        wrap.appendChild(renderPropsBar(data, opponentUid));
+        wrap.appendChild(renderPropsBar(data));
       } else {
         wrap.appendChild(renderDuelReveal(pair, myUid));
         applyDuelResultIfNeeded(data, pair, myUid);
@@ -1922,8 +2179,9 @@ async function leaveRoom(data){
 function renderRoomLobby(data){
   const isHost = data.hostUid === auth.currentUser.uid;
   const isMentalMode = data.config.gameMode === 'mental';
-  const modeLabel = isMentalMode ? 'Duelo Mental' : (data.config.rewardMode === 'points_cards' ? 'Puntos + carta del rival' : 'Solo puntos');
-  const durationLabel = isMentalMode ? `Tandas de ${MENTAL_QUESTIONS_PER_ROUND} preguntas` : (data.config.durationType === 'fixed' ? `${data.config.fixedRounds} ronda(s)` : 'Abierta (la cierra el creador)');
+  const isTriviaMode = data.config.gameMode === 'trivia';
+  const modeLabel = isTriviaMode ? 'Batalla de Trivia' : (isMentalMode ? 'Duelo Mental' : (data.config.rewardMode === 'points_cards' ? 'Puntos + carta del rival' : 'Solo puntos'));
+  const durationLabel = isTriviaMode ? `Tandas de ${TRIVIA_QUESTIONS_PER_ROUND} preguntas` : (isMentalMode ? `Tandas de ${MENTAL_QUESTIONS_PER_ROUND} preguntas` : (data.config.durationType === 'fixed' ? `${data.config.fixedRounds} ronda(s)` : 'Abierta (la cierra el creador)'));
   const wrap = h(`<div>
     <div class="eyebrow">Sala de espera</div>
     <div class="h1" style="font-size:28px;">Futcartas</div>
@@ -1944,7 +2202,9 @@ function renderRoomLobby(data){
   if (isHost) {
     wrap.querySelector('#rl-start').onclick = async () => {
       await updateDoc(doc(db, 'rooms', data.code), { status: 'playing' });
-      if (isMentalMode) {
+      if (isTriviaMode) {
+        await startTriviaQuestion(data, 1);
+      } else if (isMentalMode) {
         await startMentalQuestion(data, 1);
       } else if (data.config.rewardMode === 'points_cards') {
         await startRoomRound(data, 1);
