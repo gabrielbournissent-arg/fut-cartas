@@ -984,6 +984,7 @@ function clearDuelTimer(){ if (duelTimerInterval) { clearInterval(duelTimerInter
 
 function stopRoomListener(){
   clearDuelTimer();
+  stopSuspenseSound();
   if (unsubscribeRoom) { unsubscribeRoom(); unsubscribeRoom = null; }
 }
 function roomsKey(code){ return code; }
@@ -1640,6 +1641,110 @@ function renderHostRoundControls(data){
   return wrap;
 }
 
+// -------- Audio sintetizado: suspenso mientras se espera, y cuenta regresiva al iniciar --------
+function getAudioCtx(){
+  if (!window._fcAudioCtx) {
+    try { window._fcAudioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+    catch(e) { return null; }
+  }
+  if (window._fcAudioCtx.state === 'suspended') { try { window._fcAudioCtx.resume(); } catch(e) {} }
+  return window._fcAudioCtx;
+}
+function playBeepTone(freq, duration){
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  try {
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.28, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+    osc.connect(g); g.connect(ctx.destination);
+    osc.start(t); osc.stop(t + duration + 0.05);
+  } catch(e) { /* si el navegador bloquea audio, no pasa nada */ }
+}
+let suspenseNodes = null;
+function startSuspenseSound(){
+  if (suspenseNodes) return;
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  try {
+    const master = ctx.createGain();
+    master.gain.value = 0.1;
+    master.connect(ctx.destination);
+    const drone = ctx.createOscillator();
+    drone.type = 'sine';
+    drone.frequency.value = 58;
+    const droneGain = ctx.createGain();
+    droneGain.gain.value = 0.5;
+    drone.connect(droneGain); droneGain.connect(master);
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.55;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = 0.22;
+    lfo.connect(lfoGain); lfoGain.connect(droneGain.gain);
+    drone.start(); lfo.start();
+    const pulseInterval = setInterval(() => {
+      if (!suspenseNodes) return;
+      const t = ctx.currentTime;
+      const p = ctx.createOscillator();
+      p.type = 'sine';
+      p.frequency.value = 92;
+      const pg = ctx.createGain();
+      pg.gain.setValueAtTime(0.0001, t);
+      pg.gain.linearRampToValueAtTime(0.3, t + 0.02);
+      pg.gain.linearRampToValueAtTime(0.0001, t + 0.16);
+      p.connect(pg); pg.connect(master);
+      p.start(t); p.stop(t + 0.2);
+    }, 700);
+    suspenseNodes = { master, drone, lfo, pulseInterval };
+  } catch(e) { /* si el navegador bloquea audio, no pasa nada */ }
+}
+function stopSuspenseSound(){
+  if (!suspenseNodes) return;
+  try {
+    clearInterval(suspenseNodes.pulseInterval);
+    suspenseNodes.drone.stop();
+    suspenseNodes.lfo.stop();
+  } catch(e) { /* no crítico */ }
+  suspenseNodes = null;
+}
+const seenQuestionIntros = new Set();
+function showStartCountdown(key){
+  if (seenQuestionIntros.has(key)) return;
+  seenQuestionIntros.add(key);
+  try {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed; inset:0; z-index:9998; background:rgba(14,42,31,0.9); display:flex; align-items:center; justify-content:center; flex-direction:column; animation: fc-pop .2s ease-out;';
+    const num = document.createElement('div');
+    num.style.cssText = "font-family:'Oswald',sans-serif; font-weight:700; font-size:96px; color:var(--floodlight); text-shadow:0 0 30px rgba(255,209,102,0.5); line-height:1;";
+    const label = document.createElement('div');
+    label.style.cssText = "font-family:'Space Mono',monospace; font-size:13px; letter-spacing:0.18em; text-transform:uppercase; color:rgba(242,239,228,0.6); margin-top:10px;";
+    label.textContent = 'Preparate…';
+    overlay.appendChild(num); overlay.appendChild(label);
+    document.body.appendChild(overlay);
+    const steps = [
+      { text:'3', freq:440, wait:550 },
+      { text:'2', freq:440, wait:550 },
+      { text:'1', freq:440, wait:550 },
+      { text:'¡YA!', freq:880, wait:450 },
+    ];
+    let i = 0;
+    (function step(){
+      if (i >= steps.length) { overlay.remove(); return; }
+      num.textContent = steps[i].text;
+      if (steps[i].text === '¡YA!') { num.style.fontSize = '56px'; label.textContent = ''; }
+      playBeepTone(steps[i].freq, 0.18);
+      const wait = steps[i].wait;
+      i++;
+      setTimeout(step, wait);
+    })();
+  } catch(e) { /* no crítico */ }
+}
+
 const appliedPropsLocal = new Set();
 function playConfettiEffect(){
   const colors = ['#FFD166','#E4572E','#7CE0A6','#C7CCD6','#F2EFE4','#4CD97D'];
@@ -1779,9 +1884,12 @@ async function applyMentalResultIfNeeded(data, myUid){
     } catch(e) { console.error('No se pudo aplicar el resultado', e); }
   }
 }
+const autoRevealedLocal = new Set();
 function renderMentalQuestion(data){
   const myUid = auth.currentUser.uid;
   const m = data.mental;
+  const introKey = data.code + '_mental_' + m.questionNumber;
+  if (!m.revealed) showStartCountdown(introKey);
   const wrap = h(`<div></div>`);
   wrap.appendChild(h(`<div class="eyebrow">Sala ${data.code} · Duelo Mental · Pregunta ${m.questionNumber}/${MENTAL_QUESTIONS_PER_ROUND}</div>`));
   wrap.appendChild(h(`<div class="h1" style="font-size:24px; text-align:center;">¿Quién tiene mayor ${STAT_LABELS[m.category]}?</div>`));
@@ -1805,8 +1913,16 @@ function renderMentalQuestion(data){
   wrap.appendChild(grid);
 
   if (!m.revealed) {
+    startSuspenseSound();
     const votesCount = m.votes ? Object.keys(m.votes).length : 0;
-    wrap.appendChild(h(`<div class="small-note">Votaron ${votesCount} de ${data.players.length} jugadores.</div>`));
+    const allAnswered = data.players.length > 0 && votesCount >= data.players.length;
+    if (allAnswered && !autoRevealedLocal.has(introKey)) {
+      autoRevealedLocal.add(introKey);
+      clearDuelTimer();
+      stopSuspenseSound();
+      revealMentalQuestion(data);
+    }
+    wrap.appendChild(h(`<div class="small-note">Votaron ${votesCount} de ${data.players.length} jugadores.${allAnswered ? ' ¡Ya votaron todos, revelando…!' : ''}</div>`));
     const timerEl = h(`<div class="small-note" style="font-family:'Space Mono',monospace;"></div>`);
     wrap.appendChild(timerEl);
     clearDuelTimer();
@@ -1820,12 +1936,14 @@ function renderMentalQuestion(data){
       } else {
         timerEl.textContent = '¡Revelando!';
         clearDuelTimer();
+        stopSuspenseSound();
         revealMentalQuestion(data);
       }
     }, 1000);
     wrap.appendChild(h(`<div class="small-note" style="margin-top:10px;">Mandale algo a la sala (solo para divertir, no afecta el resultado):</div>`));
     wrap.appendChild(renderPropsBar(data));
   } else {
+    stopSuspenseSound();
     const iVoted = myVote != null;
     const iWasCorrect = myVote === m.correctSide;
     wrap.appendChild(renderResultBanner(iVoted && iWasCorrect, false));
@@ -1933,6 +2051,8 @@ function renderTriviaQuestion(data){
   const myUid = auth.currentUser.uid;
   const t = data.trivia;
   const question = TRIVIA_QUESTIONS[t.qIndex];
+  const introKey = data.code + '_trivia_' + t.questionNumber;
+  if (!t.revealed) showStartCountdown(introKey);
   const wrap = h(`<div></div>`);
   wrap.appendChild(h(`<div class="eyebrow">Sala ${data.code} · Batalla de Trivia · Pregunta ${t.questionNumber}/${TRIVIA_QUESTIONS_PER_ROUND}</div>`));
   wrap.appendChild(h(`<div class="h1" style="font-size:22px; text-align:center; line-height:1.25;">${question.q}</div>`));
@@ -1958,8 +2078,16 @@ function renderTriviaQuestion(data){
   wrap.appendChild(grid);
 
   if (!revealed) {
+    startSuspenseSound();
     const answeredCount = t.answers ? Object.keys(t.answers).length : 0;
-    wrap.appendChild(h(`<div class="small-note">Respondieron ${answeredCount} de ${data.players.length} jugadores. ¡El más rápido en acertar suma el punto!</div>`));
+    const allAnswered = data.players.length > 0 && answeredCount >= data.players.length;
+    if (allAnswered && !autoRevealedLocal.has(introKey)) {
+      autoRevealedLocal.add(introKey);
+      clearDuelTimer();
+      stopSuspenseSound();
+      revealTriviaQuestion(data);
+    }
+    wrap.appendChild(h(`<div class="small-note">Respondieron ${answeredCount} de ${data.players.length} jugadores. ¡El más rápido en acertar suma el punto!${allAnswered ? ' Revelando…' : ''}</div>`));
     const timerEl = h(`<div class="small-note" style="font-family:'Space Mono',monospace;"></div>`);
     wrap.appendChild(timerEl);
     clearDuelTimer();
@@ -1973,10 +2101,12 @@ function renderTriviaQuestion(data){
       } else {
         timerEl.textContent = '¡Revelando!';
         clearDuelTimer();
+        stopSuspenseSound();
         revealTriviaQuestion(data);
       }
     }, 1000);
   } else {
+    stopSuspenseSound();
     const iWon = winnerUid === myUid;
     wrap.appendChild(renderResultBanner(iWon, false));
     if (winnerUid) {
