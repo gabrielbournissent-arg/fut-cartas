@@ -92,7 +92,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import {
   getFirestore, doc, setDoc, getDoc, serverTimestamp,
-  collection, getDocs, updateDoc, arrayUnion, arrayRemove, onSnapshot, runTransaction, increment
+  collection, getDocs, updateDoc, arrayUnion, arrayRemove, onSnapshot, runTransaction, increment,
+  query, where
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 // -------- Configuración de Firebase (proyecto: estadium-futbol-8d758) --------
@@ -764,6 +765,80 @@ function renderGrantAvatarPanel(players){
   return wrap;
 }
 
+// -------- Panel admin: aumentar atributos de una carta puntual --------
+function renderBoostCardPanel(players){
+  const wrap = h(`<div class="panel">
+    <div class="label" style="margin-bottom:12px;">Aumentar atributos de una carta</div>
+    <label class="label">Jugador</label>
+    <select class="input" id="bc-player">
+      <option value="">Elegí un jugador…</option>
+      ${players.map(p => `<option value="${p.uid}">${p.name}${p.username ? ' (' + p.username + ')' : ''}</option>`).join('')}
+    </select>
+    <label class="label">Carta</label>
+    <select class="input" id="bc-card" disabled><option value="">Elegí primero un jugador…</option></select>
+    <label class="label">Atributo a aumentar</label>
+    <select class="input" id="bc-stat">
+      <option value="ata">Ataque</option>
+      <option value="def">Defensa</option>
+      <option value="pas">Pase</option>
+      <option value="reg">Regate</option>
+      <option value="fis">Físico</option>
+      <option value="all">Todos los atributos</option>
+    </select>
+    <label class="label">Cantidad a sumar (tope 99 por atributo)</label>
+    <input class="input" id="bc-amount" type="number" min="1" value="5"/>
+    ${formError ? `<div class="err">${formError}</div>` : ''}
+    ${formOk ? `<div class="ok">${formOk}</div>` : ''}
+    <button class="btn btn-ghost" id="bc-submit" ${busy?'disabled':''}>${busy?'Aplicando…':'Aumentar atributos'}</button>
+  </div>`);
+  const cardSelect = wrap.querySelector('#bc-card');
+  wrap.querySelector('#bc-player').onchange = async (e) => {
+    const uid = e.target.value;
+    if (!uid) { cardSelect.innerHTML = '<option value="">Elegí primero un jugador…</option>'; cardSelect.disabled = true; return; }
+    cardSelect.innerHTML = '<option value="">Cargando…</option>';
+    cardSelect.disabled = true;
+    try {
+      const snap = await getDoc(doc(db, 'users', uid));
+      const cards = snap.exists() ? (snap.data().cards || []) : [];
+      if (cards.length === 0) {
+        cardSelect.innerHTML = '<option value="">Este jugador no tiene cartas</option>';
+      } else {
+        cardSelect.innerHTML = cards.map(c => `<option value="${c.id}">${c.name} (${c.rareza}) — ATA${c.stats.ata}/DEF${c.stats.def}/PAS${c.stats.pas}/REG${c.stats.reg}/FIS${c.stats.fis}</option>`).join('');
+        cardSelect.disabled = false;
+      }
+    } catch(e2) { cardSelect.innerHTML = '<option value="">Error al cargar las cartas</option>'; }
+  };
+  wrap.querySelector('#bc-submit').onclick = async () => {
+    formError=''; formOk='';
+    const uid = wrap.querySelector('#bc-player').value;
+    const cardId = cardSelect.value;
+    const stat = wrap.querySelector('#bc-stat').value;
+    const amount = parseInt(wrap.querySelector('#bc-amount').value);
+    if (!uid || !cardId) { formError = 'Elegí un jugador y una carta.'; render(renderHome(currentProfile)); return; }
+    if (!amount || amount < 1) { formError = 'Poné una cantidad válida.'; render(renderHome(currentProfile)); return; }
+    busy = true; render(renderHome(currentProfile));
+    try {
+      const snap = await getDoc(doc(db, 'users', uid));
+      const cards = snap.exists() ? (snap.data().cards || []) : [];
+      const idx = cards.findIndex(c => c.id === cardId);
+      if (idx < 0) throw new Error('no encontrada');
+      const card = { ...cards[idx], stats: { ...cards[idx].stats } };
+      const keys = stat === 'all' ? STAT_KEYS : [stat];
+      keys.forEach(k => { card.stats[k] = Math.min(99, card.stats[k] + amount); });
+      const newCards = cards.slice();
+      newCards[idx] = card;
+      await updateDoc(doc(db, 'users', uid), { cards: newCards });
+      formOk = `Listo, se aumentaron los atributos de "${card.name}".`;
+      allPlayersCache = null;
+    } catch(e2) {
+      formError = 'No se pudo aplicar el aumento. Probá de nuevo.';
+    }
+    busy = false;
+    render(renderHome(currentProfile));
+  };
+  return wrap;
+}
+
 // -------- Panel: restablecer usuario/código de un jugador que lo olvidó --------
 async function resetPlayerCode(oldUid, newCode){
   const oldSnap = await getDoc(doc(db, 'users', oldUid));
@@ -909,6 +984,324 @@ function renderTeamNamePanel(profile){
   return wrap;
 }
 
+// -------- Rachas y medallas --------
+const MEDAL_CATALOG = [
+  { id:'streak_3', emoji:'🔥', label:'3 días seguidos', streakRequired:3 },
+  { id:'streak_7', emoji:'🥉', label:'Racha de una semana', streakRequired:7 },
+  { id:'streak_14', emoji:'🥈', label:'Racha de 2 semanas', streakRequired:14 },
+  { id:'streak_30', emoji:'🥇', label:'Racha de un mes', streakRequired:30 },
+  { id:'streak_60', emoji:'🏆', label:'Racha de 2 meses', streakRequired:60 },
+  { id:'streak_100', emoji:'💎', label:'Racha de 100 días', streakRequired:100 },
+];
+function getMedal(id){ return MEDAL_CATALOG.find(m => m.id === id); }
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+async function registerDailyStreak(uid){
+  try {
+    const today = todayStr();
+    const snap = await getDoc(doc(db, 'users', uid));
+    if (!snap.exists()) return;
+    const data = snap.data();
+    if (data.lastPlayedDate === today) return; // ya se contó hoy
+    let newStreak = 1;
+    if (data.lastPlayedDate) {
+      const diffDays = Math.round((new Date(today+'T00:00:00') - new Date(data.lastPlayedDate+'T00:00:00')) / 86400000);
+      if (diffDays === 1) newStreak = (data.streakCount||0) + 1;
+      else if (diffDays <= 0) newStreak = data.streakCount || 1;
+      else newStreak = 1; // se cortó la racha
+    }
+    const medalsSet = new Set(data.medals || []);
+    MEDAL_CATALOG.forEach(m => { if (newStreak >= m.streakRequired) medalsSet.add(m.id); });
+    const newMedals = Array.from(medalsSet);
+    await updateDoc(doc(db, 'users', uid), { lastPlayedDate: today, streakCount: newStreak, medals: newMedals });
+    if (currentProfile && currentProfile.uid === uid) {
+      currentProfile.lastPlayedDate = today;
+      currentProfile.streakCount = newStreak;
+      currentProfile.medals = newMedals;
+    }
+  } catch(e) { /* no crítico */ }
+}
+function renderMedalsPanel(profile){
+  const earned = profile.medals || [];
+  const wrap = h(`<div class="panel">
+    <div class="label" style="margin-bottom:10px;">Medallas por racha (🔥 ${profile.streakCount||0} días seguidos jugando)</div>
+    <div id="medals-grid" style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;"></div>
+  </div>`);
+  const grid = wrap.querySelector('#medals-grid');
+  MEDAL_CATALOG.forEach(m => {
+    const unlocked = earned.includes(m.id);
+    grid.appendChild(h(`<div style="text-align:center; padding:10px 4px; border-radius:10px; border:1.5px solid ${unlocked?'var(--floodlight)':'var(--pitch-line)'}; background:${unlocked?'rgba(255,209,102,0.1)':'transparent'}; opacity:${unlocked?'1':'0.4'};">
+      <div style="font-size:24px;">${m.emoji}</div>
+      <div style="font-size:9px; color:var(--chalk-dim); font-family:'Space Mono',monospace; margin-top:2px;">${unlocked ? m.label : m.streakRequired + ' días'}</div>
+    </div>`));
+  });
+  return wrap;
+}
+
+// -------- Ranking de jugadores --------
+function renderRankingLoading(){
+  const wrap = h(`<div>
+    <div class="eyebrow">Futcartas</div>
+    <div class="h1" style="font-size:28px;">🏆 Ranking</div>
+    <div class="spinner">Cargando ranking…</div>
+  </div>`);
+  loadRankingPlayers().then(players => { screen='ranking'; render(renderRanking(players)); })
+    .catch(e => { render(h(`<div class="panel"><div class="err">No se pudo cargar el ranking: ${e.message}</div></div>`)); });
+  return wrap;
+}
+let rankingCache = null;
+async function loadRankingPlayers(){
+  if (rankingCache) return rankingCache;
+  const snap = await getDocs(collection(db, 'users'));
+  const players = snap.docs.map(d => {
+    const v = d.data();
+    return { uid: d.id, name: v.name, teamName: v.teamName || '', avatar: v.avatar || 'ball', points: v.points || 0, streakCount: v.streakCount || 0 };
+  }).sort((a,b) => b.points - a.points);
+  rankingCache = players;
+  return players;
+}
+function renderRanking(players){
+  const myUid = auth.currentUser.uid;
+  const wrap = h(`<div>
+    <div class="eyebrow">Futcartas</div>
+    <div class="h1" style="font-size:28px;">🏆 Ranking de jugadores</div>
+    <div class="sub">Los mejores puntajes de todos los jugadores.</div>
+    <div class="panel">
+      <div id="ranking-list"></div>
+    </div>
+    <span class="link-small" id="rk-back">Volver a mi perfil</span>
+  </div>`);
+  const list = wrap.querySelector('#ranking-list');
+  players.forEach((p, idx) => {
+    const pos = idx + 1;
+    const isMe = p.uid === myUid;
+    const medalEmoji = pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : null;
+    list.appendChild(h(`<div style="display:flex; align-items:center; gap:12px; padding:10px 4px; border-bottom:1px solid var(--pitch-line); ${isMe?'background:rgba(255,209,102,0.08); border-radius:8px;':''}">
+      <span style="font-family:'Space Mono',monospace; font-weight:700; font-size:14px; width:28px; text-align:center; color:${pos<=3?'var(--floodlight)':'var(--chalk-dim)'};">${medalEmoji || '#'+pos}</span>
+      <span style="font-size:20px;">${avatarGlyphHtml(getAvatar(p.avatar), 20)}</span>
+      <span style="flex:1; font-size:14px; ${isMe?'font-weight:700;':''}">${p.name}${p.teamName ? ' <span style="color:var(--chalk-dim); font-size:11px;">('+p.teamName+')</span>' : ''}${isMe ? ' <span style="color:var(--floodlight); font-size:11px;">(vos)</span>' : ''}</span>
+      <span style="font-family:'Space Mono',monospace; font-weight:700; color:var(--floodlight);">${p.points} pts</span>
+    </div>`));
+  });
+  wrap.querySelector('#rk-back').onclick = () => { rankingCache = null; screen='home'; render(renderHome(currentProfile)); };
+  return wrap;
+}
+
+
+// -------- Intercambio de cartas entre jugadores --------
+function renderTradesLoading(){
+  const wrap = h(`<div>
+    <div class="eyebrow">Futcartas</div>
+    <div class="h1" style="font-size:28px;">🔁 Intercambios</div>
+    <div class="spinner">Cargando…</div>
+  </div>`);
+  Promise.all([loadAllPlayers(), loadMyTrades(auth.currentUser.uid)])
+    .then(([players, trades]) => { screen='trades'; render(renderTradesMenu(players, trades)); })
+    .catch(e => { render(h(`<div class="panel"><div class="err">No se pudieron cargar los intercambios: ${e.message}</div></div>`)); });
+  return wrap;
+}
+async function loadMyTrades(myUid){
+  const [sentSnap, receivedSnap] = await Promise.all([
+    getDocs(query(collection(db, 'trades'), where('fromUid', '==', myUid))),
+    getDocs(query(collection(db, 'trades'), where('toUid', '==', myUid))),
+  ]);
+  const sent = sentSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const received = receivedSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return { sent, received };
+}
+function tradeCardMiniHtml(card){
+  return `<div class="mini-card rareza-${card.rareza}" style="margin-bottom:0;">
+    <div class="mini-name">${card.name}</div>
+    <div class="mini-team">${card.pos} · ${card.team}</div>
+    <div class="mini-stats">
+      <span class="mini-stat">ATA ${card.stats.ata}</span>
+      <span class="mini-stat">DEF ${card.stats.def}</span>
+      <span class="mini-stat">PAS ${card.stats.pas}</span>
+      <span class="mini-stat">REG ${card.stats.reg}</span>
+      <span class="mini-stat">FIS ${card.stats.fis}</span>
+    </div>
+  </div>`;
+}
+function renderTradesMenu(players, trades){
+  const pendingReceived = trades.received.filter(t => t.status === 'pending');
+  const pendingSent = trades.sent.filter(t => t.status === 'pending');
+  const historyTrades = [...trades.sent, ...trades.received].filter(t => t.status !== 'pending')
+    .sort((a,b) => (b.createdAtMs||0) - (a.createdAtMs||0));
+  const wrap = h(`<div>
+    <div class="eyebrow">Futcartas</div>
+    <div class="h1" style="font-size:28px;">🔁 Intercambios</div>
+    <div class="sub">Proponé un intercambio 1x1 con otro jugador, o respondé propuestas que te llegaron.</div>
+    <button class="btn btn-primary" id="tr-new" style="margin-bottom:16px;">Proponer un intercambio</button>
+    <div class="panel">
+      <div class="label" style="margin-bottom:10px;">Propuestas recibidas (${pendingReceived.length})</div>
+      <div id="tr-received"></div>
+      ${pendingReceived.length === 0 ? '<div class="small-note">No tenés propuestas pendientes.</div>' : ''}
+    </div>
+    <div class="panel">
+      <div class="label" style="margin-bottom:10px;">Propuestas enviadas (${pendingSent.length})</div>
+      <div id="tr-sent"></div>
+      ${pendingSent.length === 0 ? '<div class="small-note">No enviaste propuestas pendientes.</div>' : ''}
+    </div>
+    ${historyTrades.length > 0 ? `<div class="panel"><div class="label" style="margin-bottom:10px;">Historial reciente</div><div id="tr-history"></div></div>` : ''}
+    <span class="link-small" id="tr-back">Volver a mi perfil</span>
+  </div>`);
+  const receivedWrap = wrap.querySelector('#tr-received');
+  pendingReceived.forEach(t => {
+    const card = h(`<div class="panel" style="margin-bottom:10px;">
+      <div class="small-note" style="margin:0 0 8px; text-align:left;"><b style="color:var(--chalk)">${t.fromName}</b> te ofrece esto a cambio de tu carta:</div>
+      <div class="card-grid" style="margin-bottom:10px;">${tradeCardMiniHtml(t.offerCard)}${tradeCardMiniHtml(t.requestCard)}</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <button class="btn btn-primary" style="margin-bottom:0;" id="acc-${t.id}">Aceptar</button>
+        <button class="btn btn-ghost" style="margin-bottom:0;" id="dec-${t.id}">Rechazar</button>
+      </div>
+    </div>`);
+    receivedWrap.appendChild(card);
+    card.querySelector(`#acc-${t.id}`).onclick = async () => {
+      card.querySelectorAll('button').forEach(b => b.disabled = true);
+      try { await acceptTrade(t); }
+      catch(e) { alert(e.message === 'no_disponible' ? 'Alguna de las cartas ya no está disponible (puede haberse usado en otro intercambio).' : 'No se pudo aceptar el intercambio.'); }
+      render(renderTradesLoading());
+    };
+    card.querySelector(`#dec-${t.id}`).onclick = async () => {
+      card.querySelectorAll('button').forEach(b => b.disabled = true);
+      try { await updateDoc(doc(db,'trades',t.id), { status:'declined' }); } catch(e) { /* no crítico */ }
+      render(renderTradesLoading());
+    };
+  });
+  const sentWrap = wrap.querySelector('#tr-sent');
+  pendingSent.forEach(t => {
+    const card = h(`<div class="panel" style="margin-bottom:10px;">
+      <div class="small-note" style="margin:0 0 8px; text-align:left;">Le ofreciste esto a <b style="color:var(--chalk)">${t.toName}</b> a cambio de su carta:</div>
+      <div class="card-grid" style="margin-bottom:10px;">${tradeCardMiniHtml(t.offerCard)}${tradeCardMiniHtml(t.requestCard)}</div>
+      <button class="btn btn-ghost" style="margin-bottom:0;" id="can-${t.id}">Cancelar propuesta</button>
+    </div>`);
+    sentWrap.appendChild(card);
+    card.querySelector(`#can-${t.id}`).onclick = async () => {
+      card.querySelectorAll('button').forEach(b => b.disabled = true);
+      try { await updateDoc(doc(db,'trades',t.id), { status:'cancelled' }); } catch(e) { /* no crítico */ }
+      render(renderTradesLoading());
+    };
+  });
+  if (historyTrades.length > 0) {
+    const histWrap = wrap.querySelector('#tr-history');
+    const statusLabel = { accepted: '✅ Aceptado', declined: '❌ Rechazado', cancelled: '🚫 Cancelado' };
+    historyTrades.slice(0, 10).forEach(t => {
+      const iSent = t.fromUid === auth.currentUser.uid;
+      histWrap.appendChild(h(`<div class="small-note" style="text-align:left; border-bottom:1px solid var(--pitch-line); padding:8px 0; margin:0;">
+        ${statusLabel[t.status]||t.status} — ${iSent ? 'le propusiste a '+t.toName : t.fromName+' te propuso'}: ${t.offerCard.name} ⇄ ${t.requestCard.name}
+      </div>`));
+    });
+  }
+  wrap.querySelector('#tr-back').onclick = () => { screen='home'; render(renderHome(currentProfile)); };
+  wrap.querySelector('#tr-new').onclick = () => { render(renderTradeSelectPlayer(players)); };
+  return wrap;
+}
+function renderTradeSelectPlayer(players){
+  const others = players.filter(p => p.uid !== auth.currentUser.uid);
+  const wrap = h(`<div>
+    <div class="eyebrow">Nuevo intercambio</div>
+    <div class="h1" style="font-size:26px;">¿Con quién querés intercambiar?</div>
+    <div class="panel">
+      <input class="input" id="tp-search" placeholder="Buscar jugador…"/>
+      <div id="tp-list" style="max-height:340px; overflow-y:auto;"></div>
+    </div>
+    <span class="link-small" id="tp-back">Volver</span>
+  </div>`);
+  const list = wrap.querySelector('#tp-list');
+  function renderList(term){
+    list.innerHTML = '';
+    others.filter(p => !term || p.name.toLowerCase().includes(term) || (p.username||'').toLowerCase().includes(term)).forEach(p => {
+      const row = h(`<div style="display:flex; align-items:center; gap:10px; padding:10px 4px; border-bottom:1px solid var(--pitch-line); cursor:pointer;">
+        <span style="flex:1; font-size:14px;">${p.name}</span>
+        <span style="font-family:'Space Mono',monospace; font-size:12px; color:var(--chalk-dim);">${p.cardsCount} cartas</span>
+      </div>`);
+      row.onclick = async () => {
+        render(h(`<div class="spinner">Cargando cartas de ${p.name}…</div>`));
+        try {
+          const snap = await getDoc(doc(db, 'users', p.uid));
+          const theirCards = snap.exists() ? (snap.data().cards || []) : [];
+          render(renderTradeSelectCards(p, theirCards));
+        } catch(e) { render(renderTradeSelectPlayer(players)); }
+      };
+      list.appendChild(row);
+    });
+  }
+  renderList('');
+  wrap.querySelector('#tp-search').oninput = (e) => renderList(e.target.value.trim().toLowerCase());
+  wrap.querySelector('#tp-back').onclick = () => { screen='trades'; render(renderTradesLoading()); };
+  return wrap;
+}
+function renderTradeSelectCards(target, theirCards){
+  const wrap = h(`<div>
+    <div class="eyebrow">Nuevo intercambio con ${target.name}</div>
+    <div class="h1" style="font-size:24px;">Elegí las cartas</div>
+    <div class="panel">
+      <div class="label" style="margin-bottom:8px;">Tu carta a ofrecer</div>
+      <select class="input" id="tc-mine">
+        <option value="">Elegí una carta…</option>
+        ${currentProfile.cards.map(c => `<option value="${c.id}">${c.name} (${c.rareza})</option>`).join('')}
+      </select>
+      <div class="label" style="margin-bottom:8px;">Carta que pedís de ${target.name}</div>
+      <select class="input" id="tc-theirs">
+        <option value="">Elegí una carta…</option>
+        ${theirCards.map(c => `<option value="${c.id}">${c.name} (${c.rareza})</option>`).join('')}
+      </select>
+      ${theirCards.length === 0 ? `<div class="small-note">${target.name} no tiene cartas disponibles todavía.</div>` : ''}
+      ${formError ? `<div class="err">${formError}</div>` : ''}
+      <button class="btn btn-primary" id="tc-submit" ${busy?'disabled':''}>${busy?'Enviando…':'Enviar propuesta'}</button>
+    </div>
+    <span class="link-small" id="tc-back">Volver</span>
+  </div>`);
+  wrap.querySelector('#tc-back').onclick = () => { formError=''; screen='trades'; render(renderTradesLoading()); };
+  wrap.querySelector('#tc-submit').onclick = async () => {
+    formError = '';
+    const mineId = wrap.querySelector('#tc-mine').value;
+    const theirsId = wrap.querySelector('#tc-theirs').value;
+    if (!mineId || !theirsId) { formError = 'Elegí una carta tuya y una de tu compañero.'; render(renderTradeSelectCards(target, theirCards)); return; }
+    const myCard = currentProfile.cards.find(c => c.id === mineId);
+    const theirCard = theirCards.find(c => c.id === theirsId);
+    if (!myCard || !theirCard) { formError = 'Hubo un problema con la selección, probá de nuevo.'; render(renderTradeSelectCards(target, theirCards)); return; }
+    busy = true; render(renderTradeSelectCards(target, theirCards));
+    try {
+      const tradeRef = doc(collection(db, 'trades'));
+      await setDoc(tradeRef, {
+        fromUid: auth.currentUser.uid, fromName: currentProfile.name,
+        toUid: target.uid, toName: target.name,
+        offerCard: myCard, requestCard: theirCard,
+        status: 'pending', createdAt: serverTimestamp(), createdAtMs: Date.now(),
+      });
+      busy = false;
+      screen='trades'; render(renderTradesLoading());
+    } catch(e) {
+      busy = false;
+      formError = 'No se pudo enviar la propuesta. Probá de nuevo.';
+      render(renderTradeSelectCards(target, theirCards));
+    }
+  };
+  return wrap;
+}
+async function acceptTrade(trade){
+  await runTransaction(db, async (tx) => {
+    const fromRef = doc(db, 'users', trade.fromUid);
+    const toRef = doc(db, 'users', trade.toUid);
+    const fromSnap = await tx.get(fromRef);
+    const toSnap = await tx.get(toRef);
+    if (!fromSnap.exists() || !toSnap.exists()) throw new Error('no_disponible');
+    const fromCards = fromSnap.data().cards || [];
+    const toCards = toSnap.data().cards || [];
+    if (!fromCards.find(c => c.id === trade.offerCard.id)) throw new Error('no_disponible');
+    if (!toCards.find(c => c.id === trade.requestCard.id)) throw new Error('no_disponible');
+    const newFromCards = fromCards.filter(c => c.id !== trade.offerCard.id).concat([trade.requestCard]);
+    const newToCards = toCards.filter(c => c.id !== trade.requestCard.id).concat([trade.offerCard]);
+    tx.update(fromRef, { cards: newFromCards });
+    tx.update(toRef, { cards: newToCards });
+    tx.update(doc(db, 'trades', trade.id), { status: 'accepted' });
+  });
+  if (trade.toUid === auth.currentUser.uid) {
+    currentProfile.cards = currentProfile.cards.filter(c => c.id !== trade.requestCard.id).concat([trade.offerCard]);
+  }
+  allPlayersCache = null;
+}
+
 // -------- Pantalla: perfil / inicio --------
 let currentProfile = null;
 function renderHome(profile){
@@ -918,6 +1311,7 @@ function renderHome(profile){
   const oros = profile.cards.filter(c => c.rareza === 'oro').length;
   const isAdmin = profile.role === 'admin';
   const isPartiallyBlocked = profile.blocked && profile.blockType === 'parcial';
+  const streakCount = profile.streakCount || 0;
   const wrap = h(`<div>
     <div class="top-row">
       <div class="eyebrow">Futcartas</div>
@@ -931,18 +1325,26 @@ function renderHome(profile){
       <div class="stat-card"><div class="num">${profile.cards.length}</div><div class="lbl">Cartas totales</div></div>
       <div class="stat-card"><div class="num">${platas}</div><div class="lbl">Plata</div></div>
       <div class="stat-card"><div class="num">${oros}</div><div class="lbl">Oro</div></div>
+      <div class="stat-card"><div class="num">🔥 ${streakCount}</div><div class="lbl">Racha (días)</div></div>
+      <div class="stat-card"><div class="num">${(profile.medals||[]).length}</div><div class="lbl">Medallas</div></div>
     </div>
-    <button class="btn btn-primary" id="go-rooms" style="margin-bottom:16px;" ${isPartiallyBlocked?'disabled':''}>Jugar en sala</button>
+    <button class="btn btn-primary" id="go-rooms" style="margin-bottom:10px;" ${isPartiallyBlocked?'disabled':''}>Jugar en sala</button>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px;">
+      <button class="btn btn-ghost" id="go-ranking" style="margin-bottom:0;">🏆 Ranking</button>
+      <button class="btn btn-ghost" id="go-trades" style="margin-bottom:0;" ${isPartiallyBlocked?'disabled':''}>🔁 Intercambios</button>
+    </div>
     <div id="avatar-slot"></div>
+    <div id="medals-slot"></div>
     <div id="teamname-slot"></div>
     <div id="admin-slot"></div>
     <div class="panel">
       <div class="label" style="margin-bottom:12px;">Tu colección (${profile.cards.length})</div>
       <div class="card-grid" id="grid"></div>
     </div>
-    <div class="small-note">Los jugadores ingresan con usuario y código creados por el administrador — no hay registro abierto ni chat de texto libre entre jugadores. Próximas etapas: partidas en vivo que otorgan puntos, canje de cartas Plata/Oro e intercambios.</div>
+    <div class="small-note">Los jugadores ingresan con usuario y código creados por el administrador — no hay registro abierto ni chat de texto libre entre jugadores.</div>
   </div>`);
   wrap.querySelector('#avatar-slot').appendChild(renderAvatarPanel(profile));
+  wrap.querySelector('#medals-slot').appendChild(renderMedalsPanel(profile));
   wrap.querySelector('#teamname-slot').appendChild(renderTeamNamePanel(profile));
   if (isAdmin) {
     const slot = wrap.querySelector('#admin-slot');
@@ -953,6 +1355,7 @@ function renderHome(profile){
       slot.appendChild(renderPlayerListPanel(players));
       slot.appendChild(renderGrantCardPanel(players));
       slot.appendChild(renderGrantAvatarPanel(players));
+      slot.appendChild(renderBoostCardPanel(players));
       slot.appendChild(renderResetCodePanel(players));
     }).catch(e => { slot.appendChild(h(`<div class="panel"><div class="err">No se pudieron cargar los paneles de jugadores: ${e.message}</div></div>`)); });
   }
@@ -972,6 +1375,8 @@ function renderHome(profile){
   });
   wrap.querySelector('#logout').onclick = () => signOut(auth);
   wrap.querySelector('#go-rooms').onclick = () => { screen='rooms-menu'; formError=''; render(renderRoomsMenu()); };
+  wrap.querySelector('#go-ranking').onclick = () => { screen='ranking'; formError=''; render(renderRankingLoading()); };
+  wrap.querySelector('#go-trades').onclick = () => { screen='trades'; formError=''; render(renderTradesLoading()); };
   return wrap;
 }
 
@@ -1324,6 +1729,7 @@ async function applyTogetherResultIfNeeded(data, myUid){
   if (appliedTogetherLocal.has(key)) return;
   if (data.round.appliedBy && data.round.appliedBy.includes(myUid)) { appliedTogetherLocal.add(key); return; }
   appliedTogetherLocal.add(key);
+  registerDailyStreak(myUid);
   const won = data.round.winners.includes(myUid);
   if (won) {
     try {
@@ -1460,6 +1866,7 @@ async function applyDuelResultIfNeeded(data, pair, myUid){
   if (appliedDuelsLocal.has(key)) return;
   if (pair.appliedBy && pair.appliedBy.includes(myUid)) { appliedDuelsLocal.add(key); return; }
   appliedDuelsLocal.add(key);
+  registerDailyStreak(myUid);
   if (pair.tie) { await markDuelApplied(data, pair, myUid); return; }
   const won = pair.winnerUid === myUid;
   const opponentUid = pair.players.find(u => u !== myUid);
@@ -1874,6 +2281,7 @@ async function applyMentalResultIfNeeded(data, myUid){
   const key = data.code + '_mental_' + data.mental.questionNumber;
   if (appliedMentalLocal.has(key)) return;
   appliedMentalLocal.add(key);
+  registerDailyStreak(myUid);
   const myVote = data.mental.votes ? data.mental.votes[myUid] : null;
   if (myVote && myVote === data.mental.correctSide) {
     try {
@@ -2037,6 +2445,7 @@ async function applyTriviaResultIfNeeded(data, myUid){
   const key = data.code + '_trivia_' + data.trivia.questionNumber;
   if (appliedTriviaLocal.has(key)) return;
   appliedTriviaLocal.add(key);
+  registerDailyStreak(myUid);
   const winnerUid = computeTriviaWinner(data);
   if (winnerUid === myUid) {
     try {
